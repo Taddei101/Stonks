@@ -1,0 +1,101 @@
+# ---------------------------------------------------------------------------
+# Dados pessoais — nunca versionar
+# ---------------------------------------------------------------------------
+# Extratos da B3: contêm CPF implícito, posições e todo o histórico de
+# negócios. Mesmo em repositório privado, não há motivo para estarem no git.
+extratos/
+*.xlsx
+*.xls
+
+# Arquivo de lock que o Excel cria ao abrir a planilha
+~$*
+
+# Gráficos gerados: têm os seus números e são reproduzíveis a qualquer
+# momento rodando o programa.
+saida/
+
+# Cache de preços do yfinance: reproduzível e pesado.
+.cache/
+*.parquet
+
+# ---------------------------------------------------------------------------
+# config/ — DECISÃO SUA
+# ---------------------------------------------------------------------------
+# Hoje config/ está versionado, e tem vantagem: o git passa a guardar o
+# histórico das suas mudanças de alvo, e dá para ver quando e por que a
+# alocação mudou. Os arquivos não têm dado identificável — são pesos,
+# ajustes de conversão e preços de papel deslistado.
+#
+# Se um dia o repositório virar público, descomente as quatro linhas abaixo
+# e versione cópias .exemplo no lugar.
+# config/alvo.json
+# config/ajustes.csv
+# config/pendentes.csv
+# config/precos_manuais.csv
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+ENV/
+
+# Empacotamento e instalação
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Testes e cobertura
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ---------------------------------------------------------------------------
+# Editor e sistema operacional
+# ---------------------------------------------------------------------------
+# .vscode/ fica versionado de propósito: settings.json e launch.json do
+# projeto são úteis para quem clonar. Os arquivos de estado local, não.
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+.idea/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+
+# ---------------------------------------------------------------------------
+# Segredos
+# ---------------------------------------------------------------------------
+# Ainda não há nenhum, mas quando o Flask entrar vai ter SECRET_KEY, e
+# quando a API do Banco Central ou uma fonte paga de preço entrar, chaves.
+.env
+.env.*
+!.env.exemplo
+*.key
+*.pem
+secrets.json

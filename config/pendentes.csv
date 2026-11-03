@@ -1,0 +1,13 @@
+# Compras e vendas ainda não liquidadas.
+#
+# O extrato da B3 usa data de LIQUIDAÇÃO (D+2), então o que você negociou
+# hoje só aparece depois de amanhã. Sem este overlay o rebalanceador enxerga
+# a posição antiga e manda comprar de novo o que você já comprou.
+#
+# Mesmo formato do ajustes.csv. Apague a linha quando o extrato alcançar
+# (e a conferência de Atualização continua valendo como rede de segurança).
+#
+# Exemplo real: 9 VALE3 compradas em 03/11/2026, liquidam em 05/11.
+# Descomente a linha abaixo para ativar.
+data,ticker,delta,nota
+# 2026-11-03,VALE3,9,compra pendente de liquidacao

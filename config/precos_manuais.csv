@@ -1,0 +1,15 @@
+# Preços para papel que o yfinance não serve.
+#
+# Necessário para papel convertido ou deslistado: ele esteve na carteira por
+# um intervalo, precisa de preço nesse intervalo, e não tem série pública.
+# Uma linha por ticker basta — o valor é propagado para frente.
+#
+# Só preenche ticker que o yfinance NÃO tem; nunca sobrescreve preço de mercado.
+# Se rodar e der erro "Sem série de preço para [...]", é aqui que se resolve.
+#
+# CPLE5 e CPLE7 vieram da conversão da COPEL e ficaram poucas semanas em
+# carteira. Valores abaixo tirados do próprio extrato (compra do CPLE6 a
+# 12,68 e resgate do recibo CPLE7 a 0,775).
+data,ticker,close
+2025-11-11,CPLE5,12.68
+2025-12-23,CPLE7,0.775

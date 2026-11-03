@@ -1,0 +1,19 @@
+# Ajustes manuais de quantidade.
+#
+# Só para eventos que o extrato da B3 registra pela metade: ele credita o
+# papel novo via linha de "Atualização", mas nunca debita o antigo.
+# Desdobramento e bonificação NÃO entram aqui — vêm do extrato como
+# "Bonificação em Ativos".
+#
+# Confira com posicao.conferir_atualizacoes(): toda linha de "Atualização"
+# do extrato deve bater com o saldo derivado. O que não bate pede ajuste.
+#
+# Cadeia COPEL (conversão de PN para ON, fator 1, confirmada pelo titular):
+#   CPLE6 -> CPLE5 -> CPLE3, com CPLE7 (recibo) resgatado em dinheiro.
+data,ticker,delta,nota
+2025-11-11,CPLE6,-6,conversao CPLE6 -> CPLE5 (saida; entrada vem via Atualizacao)
+2025-11-11,CPLE5,6,conversao CPLE6 -> CPLE5 (entrada)
+2025-12-23,CPLE5,-6,conversao CPLE5 -> CPLE3 (saida)
+2025-12-23,CPLE3,6,conversao CPLE5 -> CPLE3 (entrada)
+2025-12-23,CPLE7,6,recibo CPLE7 recebido na conversao
+2025-12-30,CPLE7,-6,recibo CPLE7 resgatado em dinheiro (R$ 4.64)

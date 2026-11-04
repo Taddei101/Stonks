@@ -441,3 +441,26 @@ def tendencia(retornos: pd.DataFrame) -> pd.Series:
         )
 
     return (positivas / total).rename("tendencia")
+
+
+def regras_sobre_retornos() -> dict:
+    """Todas as regras com a MESMA assinatura: função(retornos) -> pesos.
+
+    As baseadas só em risco recebem a covariância encolhida calculada aqui;
+    as que usam retorno recebem a série direto. Uniformizar a assinatura é o
+    que permite à validação deslizante tratar todas igual, sem saber de qual
+    tipo cada uma é.
+    """
+    from carteira.risco import matriz_covariancia
+
+    def _por_covariancia(funcao):
+        def _regra(retornos: pd.DataFrame) -> pd.Series:
+            return funcao(matriz_covariancia(retornos))
+
+        return _regra
+
+    regras = {nome: _por_covariancia(f) for nome, f in REGRAS.items()}
+    regras["markowitz"] = markowitz
+    regras["markowitz_encolhido"] = markowitz_encolhido
+    regras["tendencia"] = tendencia
+    return regras

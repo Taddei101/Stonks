@@ -24,20 +24,29 @@ def _sem_sufixo(simbolo: str) -> str:
     return simbolo[: -len(SUFIXO_B3)] if simbolo.endswith(SUFIXO_B3) else simbolo
 
 
-def _baixar(simbolos: list[str], **kwargs) -> pd.DataFrame:
+def _baixar(simbolos: list[str], ajustado: bool = False, **kwargs) -> pd.DataFrame:
     """Baixa e devolve só o Close, com colunas em ticker puro.
 
-    `auto_adjust=False` é obrigatório e explícito: nas versões recentes o
-    default do yfinance virou True, e aí o Close vem ajustado por proventos e
-    desdobramentos. Para valor de mercado da carteira queremos o fechamento
-    real multiplicado pela quantidade real — e usar ajustado junto com os
-    dividendos do extrato contaria o provento duas vezes.
+    As duas séries servem a propósitos opostos e NÃO são intercambiáveis:
+
+    `ajustado=False` (padrão) é o que vale para VALOR DE MERCADO da carteira:
+    fechamento real vezes quantidade real. Usar ajustado aqui, junto com os
+    dividendos que vêm do extrato, contaria o provento duas vezes.
+
+    `ajustado=True` é o que vale para RISCO E RETORNO: a série vem ajustada
+    por provento e desdobramento. Sem isso, toda ação que paga bem aparece
+    com retorno subestimado e com um degrau artificial na data-ex — degrau
+    que contamina a matriz de covariância e, por tabela, toda a análise de
+    correlação. Ver `carteira.series`.
+
+    Em qualquer caso o parâmetro é explícito, porque o default do yfinance
+    mudou de False para True entre versões.
     """
     import yfinance as yf
 
     bruto = yf.download(
         simbolos,
-        auto_adjust=False,
+        auto_adjust=ajustado,
         progress=False,
         **kwargs,
     )
@@ -87,14 +96,24 @@ def historico(
     inicio,
     fim=None,
     cache: Path | None = None,
+    ajustado: bool = False,
 ) -> pd.DataFrame:
     """Série de fechamento por ticker, index=data, columns=ticker.
 
-    O cache é um parquet em formato longo (data, ticker, close). A política é
-    simples de propósito: se o cache não cobrir toda a janela pedida para
-    todos os tickers, rebaixa a janela inteira e reescreve. Com 8 papéis e
-    dois anos isso é uma requisição — não vale a complexidade de baixar só o
-    delta.
+    `ajustado` escolhe entre preço de mercado e série de retorno total — ver
+    `_baixar`. Para a série ajustada prefira `historico_total`, que é o mesmo
+    com o nome certo.
+
+    O cache é um parquet em formato longo (data, ticker, close, ajustado). A
+    política é simples de propósito: se o cache não cobrir toda a janela
+    pedida para todos os tickers, rebaixa a janela inteira e reescreve. Com 8
+    papéis e dois anos isso é uma requisição — não vale a complexidade de
+    baixar só o delta.
+
+    A coluna `ajustado` existe para impedir um erro traiçoeiro: as duas séries
+    no mesmo arquivo seriam indistinguíveis, e a leitura devolveria preço
+    ajustado onde se esperava preço de mercado, sem erro nenhum. Cache escrito
+    antes desta coluna existir é lido como não ajustado, que é o que ele é.
     """
     tickers = sorted(set(tickers))
     if not tickers:
@@ -105,10 +124,13 @@ def historico(
 
     if cache is not None and Path(cache).exists():
         longo = pd.read_parquet(cache)
+        if "ajustado" not in longo.columns:
+            longo["ajustado"] = False
         recorte = longo[
             longo["ticker"].isin(tickers)
             & (longo["data"] >= inicio)
             & (longo["data"] <= fim)
+            & (longo["ajustado"] == ajustado)
         ]
         cobre_tickers = set(recorte["ticker"].unique()) >= set(tickers)
         if cobre_tickers and len(recorte):
@@ -122,6 +144,7 @@ def historico(
 
     close = _baixar(
         [_simbolo(t) for t in tickers],
+        ajustado=ajustado,
         start=inicio.strftime("%Y-%m-%d"),
         end=(fim + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
     )
@@ -133,14 +156,38 @@ def historico(
             close.reset_index(names="data")
             .melt(id_vars="data", var_name="ticker", value_name="close")
             .dropna(subset=["close"])
+            .assign(ajustado=ajustado)
         )
         if cache.exists():
             antigo = pd.read_parquet(cache)
+            if "ajustado" not in antigo.columns:
+                antigo["ajustado"] = False
             longo = pd.concat([antigo, longo], ignore_index=True)
-        longo = longo.drop_duplicates(subset=["data", "ticker"], keep="last")
+        longo = longo.drop_duplicates(
+            subset=["data", "ticker", "ajustado"], keep="last"
+        )
         longo.sort_values(["data", "ticker"]).to_parquet(cache, index=False)
 
     return close
+
+
+def historico_total(
+    tickers: list[str],
+    inicio,
+    fim=None,
+    cache: Path | None = None,
+) -> pd.DataFrame:
+    """Série de retorno total: ajustada por provento e desdobramento.
+
+    Esta é a série para análise de risco. NÃO use para valor de carteira —
+    para isso existe `historico`, e misturar as duas conta dividendo em
+    dobro.
+
+    Use um arquivo de cache diferente do usado por `historico`. Não é
+    obrigatório, porque o cache sabe distinguir as duas séries, mas separar
+    deixa óbvio qual é qual ao olhar a pasta.
+    """
+    return historico(tickers, inicio, fim=fim, cache=cache, ajustado=True)
 
 
 def carregar_precos_manuais(caminho: Path) -> pd.DataFrame:

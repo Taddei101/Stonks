@@ -8,6 +8,8 @@
     python main.py --risco         # diagnóstico de risco da posição atual
     python main.py --risco --alvo  # mesmo diagnóstico, sobre os pesos alvo
     python main.py --risco --janela 5     # outra janela, em anos
+    python main.py --comparar      # compara regras de alocação
+    python main.py --comparar --janela 5  # idem, em outra janela
 """
 
 import argparse
@@ -53,6 +55,7 @@ CACHE_PRECOS = RAIZ / ".cache" / "precos.parquet"
 # série de valor de mercado, e manter arquivos distintos deixa óbvio qual é
 # qual ao olhar a pasta.
 CACHE_PRECOS_TOTAL = RAIZ / ".cache" / "precos_total.parquet"
+CACHE_CDI = RAIZ / ".cache" / "cdi.parquet"
 SAIDA_RETORNO = RAIZ / "saida" / "retorno.png"
 SAIDA_PROVENTOS = RAIZ / "saida" / "proventos.png"
 
@@ -138,6 +141,52 @@ def rodar_risco(ledger, usar_alvo: bool, janela_anos: float) -> None:
     print(formatar_risco(analise))
 
 
+def rodar_comparacao(ledger, janela_anos: float, sem_cdi: bool) -> None:
+    """Compara regras de alocação sobre o mesmo período.
+
+    Todas as regras são calculadas sobre a MESMA matriz de covariância
+    encolhida, para que a diferença entre elas venha da regra e não de
+    estimativas distintas da estrutura de risco.
+    """
+    from carteira.alocacoes import todas
+    from carteira.cdi import CDIIndisponivel, alinhar, cdi_mensal
+    from carteira.comparar import comparar, formatar as formatar_comparacao
+    from carteira.precos import historico_total
+    from carteira.risco import matriz_covariancia
+    from carteira.series import retorno_carteira, retornos_mensais
+
+    alvo = carregar_alvo(ARQUIVO_ALVO)
+    inicio = pd.Timestamp.today().normalize() - pd.DateOffset(
+        days=round(janela_anos * 365)
+    )
+    precos = historico_total(sorted(alvo.index), inicio, cache=CACHE_PRECOS_TOTAL)
+    retornos = retornos_mensais(precos)
+
+    carteiras = todas(matriz_covariancia(retornos))
+    carteiras["alvo_atual"] = alvo.reindex(retornos.columns).fillna(0.0)
+
+    series = {
+        nome: retorno_carteira(retornos, pesos)
+        for nome, pesos in carteiras.items()
+    }
+
+    cdi = None
+    if not sem_cdi:
+        try:
+            cdi = alinhar(
+                cdi_mensal(retornos.index.min(), cache=CACHE_CDI), retornos.index
+            )
+        except CDIIndisponivel as erro:
+            print(f"\nSem CDI: {erro}")
+
+    print()
+    print(formatar_comparacao(comparar(series, cdi)))
+
+    print()
+    print("PESOS DE CADA REGRA")
+    print(pd.DataFrame(carteiras).map(lambda v: f"{v:6.1%}").to_string())
+
+
 def rodar_grafico(movimentacoes, ledger, ano: int | None) -> None:
     from carteira.graficos import (
         grafico_proventos_ano,
@@ -210,6 +259,8 @@ def main(
     risco: bool = False,
     usar_alvo: bool = False,
     janela: float = 3.0,
+    comparar_alocacoes: bool = False,
+    sem_cdi: bool = False,
 ) -> None:
     movimentacoes, ledger = carregar_tudo()
 
@@ -220,7 +271,9 @@ def main(
     )
     mostrar_conferencia(movimentacoes, ledger)
 
-    if risco:
+    if comparar_alocacoes:
+        rodar_comparacao(ledger, janela, sem_cdi)
+    elif risco:
         rodar_risco(ledger, usar_alvo, janela)
     elif grafico:
         rodar_grafico(movimentacoes, ledger, ano)
@@ -247,5 +300,12 @@ if __name__ == "__main__":
     parser.add_argument("--janela", type=float, default=3.0,
                         help="Com --risco: janela de histórico em anos "
                              "(padrão: 3)")
+    parser.add_argument("--comparar", action="store_true",
+                        help="Compara regras de alocação (1/N, inverso da "
+                             "volatilidade, paridade de risco, mínima "
+                             "variância) com o alvo atual")
+    parser.add_argument("--sem-cdi", action="store_true",
+                        help="Com --comparar: não busca o CDI no Banco Central")
     args = parser.parse_args()
-    main(args.aporte, args.grafico, args.ano, args.risco, args.alvo, args.janela)
+    main(args.aporte, args.grafico, args.ano, args.risco, args.alvo, args.janela,
+         args.comparar, args.sem_cdi)

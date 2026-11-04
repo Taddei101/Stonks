@@ -11,23 +11,34 @@ encaixe na arquitetura atual e critério de pronto.
 - **Fase 1 — FEITA.** `carteira/risco.py` com Ledoit-Wolf,
   `carteira/componentes.py` com apostas efetivas, contribuição de risco por
   ativo e por bloco, `carteira/relatorio.py` e o comando `main.py --risco`.
-- **Fases 2 a 4 — pendentes.** Rode a Fase 1 com dados reais antes de seguir:
-  o resultado muda o que faz sentido construir depois.
+- **Fase 2 — FEITA.** `carteira/alocacoes.py` com 1/N, inverso da
+  volatilidade, paridade de risco e mínima variância; `carteira/cdi.py` com a
+  série do Banco Central; `carteira/comparar.py` com intervalo de confiança
+  por reamostragem em blocos; comando `main.py --comparar`.
+- **Fase 3 — adiada.** Com 5,01 apostas efetivas medidas, a hipótese de
+  concentração perdeu força e os cenários de estresse deixaram de ser
+  prioridade.
+- **Fase 4 — pendente.** Bandas de rebalanceamento, proventos como
+  instrumento, custos e imposto. É o que responde "quando comprar ou vender".
 
-Extra não previsto no plano: extrato sintético em `tests/dados/` e suíte de
-126 testes, que antes não rodava em clone limpo.
+Extras não previstos no plano: extrato sintético em `tests/dados/`, suíte de
+185 testes que antes não rodava em clone limpo, correção do mês em andamento
+na série mensal, e redução do `blocos.json` a uma dimensão depois que os
+componentes principais se mostraram melhores que o agrupamento manual.
 
-**Primeiro comando a rodar:**
+**Comandos:**
 
     python main.py --risco --alvo --janela 3
+    python main.py --comparar --janela 3
 
-Compare com `--janela 5` e `--janela 1`. Se as apostas efetivas e a
-contribuição por bloco mudarem muito entre as janelas, isso sozinho já diz
-que a estimativa de 3 anos não é estável o bastante para decidir alocação.
+Rode os dois em `--janela 1`, `3` e `5`. Se o diagnóstico mudar muito entre
+as janelas, isso sozinho já diz que a estimativa não é estável o bastante
+para decidir alocação.
 
-Olhe também a intensidade de encolhimento que o relatório imprime. Ela é a
-medida de quanto a matriz amostral precisou ser corrigida: quanto mais alta,
-menos confiável era a covariância que alimentou a otimização original.
+No relatório de risco, olhe a intensidade de encolhimento: ela mede quanto a
+matriz amostral precisou ser corrigida. Na comparação, olhe primeiro a
+largura do intervalo de Sharpe — diferenças menores que ela não significam
+nada.
 
 ---
 

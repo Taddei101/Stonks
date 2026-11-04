@@ -1,0 +1,55 @@
+{
+  "_nota": [
+    "Mapeia cada ticker para os fatores de risco que o afetam. Um ativo",
+    "pertence a varios blocos ao mesmo tempo, e e isso que importa: dois",
+    "papeis de setores diferentes podem compartilhar o mesmo risco politico.",
+    "",
+    "CONFIRA E AJUSTE. Controle acionario muda: a Copel deixou de ser",
+    "estatal na privatizacao de 2023 e virou corporacao com golden share do",
+    "estado do Parana. A Taesa e controlada pela ISA Energia Brasil, cujo",
+    "controlador final e estatal colombiano - risco de estado, mas de outro",
+    "pais e outro ciclo politico.",
+    "",
+    "Toda chave que comeca com _ e ignorada na leitura."
+  ],
+
+  "setor": {
+    "ITUB4": "bancos",
+    "BBAS3": "bancos",
+    "VALE3": "commodities",
+    "PETR4": "commodities",
+    "CPLE3": "eletricas",
+    "TAEE11": "eletricas",
+    "IVVB11": "exterior"
+  },
+
+  "controle": {
+    "PETR4": "estatal_br",
+    "BBAS3": "estatal_br",
+    "CPLE3": "golden_share",
+    "VALE3": "golden_share",
+    "TAEE11": "estatal_estrangeiro",
+    "ITUB4": "privado",
+    "IVVB11": "fundo"
+  },
+
+  "moeda": {
+    "ITUB4": "BRL",
+    "BBAS3": "BRL",
+    "VALE3": "BRL",
+    "PETR4": "BRL",
+    "CPLE3": "BRL",
+    "TAEE11": "BRL",
+    "IVVB11": "USD"
+  },
+
+  "receita": {
+    "ITUB4": "domestica",
+    "BBAS3": "domestica",
+    "CPLE3": "domestica",
+    "TAEE11": "domestica",
+    "VALE3": "exportadora",
+    "PETR4": "exportadora",
+    "IVVB11": "externa"
+  }
+}

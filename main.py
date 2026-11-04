@@ -5,6 +5,9 @@
     python main.py --grafico       # gera os PNGs (retorno e proventos do ano)
     python main.py --grafico --ano 2025   # proventos de outro ano
     python main.py --grafico --ano 0      # proventos: histórico completo
+    python main.py --risco         # diagnóstico de risco da posição atual
+    python main.py --risco --alvo  # mesmo diagnóstico, sobre os pesos alvo
+    python main.py --risco --janela 5     # outra janela, em anos
 """
 
 import argparse
@@ -44,7 +47,12 @@ ARQUIVO_AJUSTES = CONFIG / "ajustes.csv"
 ARQUIVO_PENDENTES = CONFIG / "pendentes.csv"
 ARQUIVO_ALVO = CONFIG / "alvo.json"
 ARQUIVO_PRECOS_MANUAIS = CONFIG / "precos_manuais.csv"
+ARQUIVO_BLOCOS = CONFIG / "blocos.json"
 CACHE_PRECOS = RAIZ / ".cache" / "precos.parquet"
+# Cache separado: a série ajustada por provento não é intercambiável com a
+# série de valor de mercado, e manter arquivos distintos deixa óbvio qual é
+# qual ao olhar a pasta.
+CACHE_PRECOS_TOTAL = RAIZ / ".cache" / "precos_total.parquet"
 SAIDA_RETORNO = RAIZ / "saida" / "retorno.png"
 SAIDA_PROVENTOS = RAIZ / "saida" / "proventos.png"
 
@@ -88,6 +96,46 @@ def rodar_rebalanceamento(ledger, aporte: float) -> None:
     precos = cotacao_atual(sorted(set(posicao.index) | set(alvo.index)))
     print()
     print(formatar(plano_aporte(posicao, precos, alvo, aporte)))
+
+
+def rodar_risco(ledger, usar_alvo: bool, janela_anos: float) -> None:
+    """Diagnóstico de estrutura de risco da carteira.
+
+    Usa a série AJUSTADA por provento e desdobramento — a de valor de
+    mercado produziria correlação contaminada pelo degrau da data-ex.
+    """
+    from carteira.blocos import carregar_blocos
+    from carteira.precos import historico_total
+    from carteira.relatorio import analise_risco, formatar as formatar_risco
+    from carteira.series import retornos_mensais
+
+    alvo = carregar_alvo(ARQUIVO_ALVO)
+    if usar_alvo:
+        pesos = alvo
+        origem = "pesos alvo (config/alvo.json)"
+    else:
+        posicao = posicao_em(ledger)
+        precos = cotacao_atual(sorted(posicao.index))
+        valor = posicao * precos.reindex(posicao.index)
+        pesos = (valor / valor.sum()).rename("peso")
+        origem = "posição atual, a preço de mercado"
+
+    inicio = pd.Timestamp.today().normalize() - pd.DateOffset(
+        days=round(janela_anos * 365)
+    )
+    precos_totais = historico_total(
+        sorted(pesos.index), inicio, cache=CACHE_PRECOS_TOTAL
+    )
+
+    analise = analise_risco(
+        retornos_mensais(precos_totais),
+        pesos,
+        dimensoes=carregar_blocos(ARQUIVO_BLOCOS),
+    )
+
+    print()
+    print(f"Pesos: {origem}")
+    print(formatar_risco(analise))
 
 
 def rodar_grafico(movimentacoes, ledger, ano: int | None) -> None:
@@ -155,7 +203,14 @@ def rodar_grafico(movimentacoes, ledger, ano: int | None) -> None:
     print(f"          {caminho_proventos}")
 
 
-def main(aporte: float, grafico: bool, ano: int | None = None) -> None:
+def main(
+    aporte: float,
+    grafico: bool,
+    ano: int | None = None,
+    risco: bool = False,
+    usar_alvo: bool = False,
+    janela: float = 3.0,
+) -> None:
     movimentacoes, ledger = carregar_tudo()
 
     print(
@@ -165,7 +220,9 @@ def main(aporte: float, grafico: bool, ano: int | None = None) -> None:
     )
     mostrar_conferencia(movimentacoes, ledger)
 
-    if grafico:
+    if risco:
+        rodar_risco(ledger, usar_alvo, janela)
+    elif grafico:
         rodar_grafico(movimentacoes, ledger, ano)
     else:
         rodar_rebalanceamento(ledger, aporte)
@@ -181,5 +238,14 @@ if __name__ == "__main__":
     parser.add_argument("--ano", type=int, default=None,
                         help="Ano do gráfico de proventos (padrão: ano atual; "
                              "use 0 para o histórico completo)")
+    parser.add_argument("--risco", action="store_true",
+                        help="Diagnóstico de risco: apostas efetivas, "
+                             "componentes principais e contribuição por bloco")
+    parser.add_argument("--alvo", action="store_true",
+                        help="Com --risco: analisa os pesos alvo em vez da "
+                             "posição atual")
+    parser.add_argument("--janela", type=float, default=3.0,
+                        help="Com --risco: janela de histórico em anos "
+                             "(padrão: 3)")
     args = parser.parse_args()
-    main(args.aporte, args.grafico, args.ano)
+    main(args.aporte, args.grafico, args.ano, args.risco, args.alvo, args.janela)

@@ -214,6 +214,105 @@ def _alinhar_pesos(covariancia: pd.DataFrame, pesos: pd.Series) -> np.ndarray:
     return (w / soma).to_numpy()
 
 
+def contribuicao_marginal(covariancia: pd.DataFrame, pesos: pd.Series) -> pd.Series:
+    """Quanto a volatilidade da carteira muda ao aumentar um peso.
+
+    É a derivada parcial de σ em relação a wᵢ, igual a (Σw)ᵢ / σ.
+
+    Serve para decidir na margem: entre dois ativos, aumentar o de menor
+    contribuição marginal reduz mais o risco por unidade de capital
+    realocada. Note que um ativo volátil pode ter contribuição marginal
+    BAIXA se for pouco correlacionado com o resto — é exatamente assim que
+    diversificação funciona, e é o que a volatilidade isolada não mostra.
+    """
+    w = _alinhar_pesos(covariancia, pesos)
+    sigma = float(np.sqrt(max(w @ covariancia.to_numpy() @ w, 0.0)))
+    if sigma <= 0:
+        raise ValueError("Volatilidade nula: contribuição indefinida.")
+
+    return pd.Series(
+        covariancia.to_numpy() @ w / sigma,
+        index=covariancia.index,
+        name="marginal",
+    )
+
+
+def contribuicao_risco(covariancia: pd.DataFrame, pesos: pd.Series) -> pd.Series:
+    """Parcela da volatilidade da carteira que vem de cada ativo.
+
+    Contribuição total = wᵢ × contribuição marginal. A soma das contribuições
+    é EXATAMENTE a volatilidade da carteira — consequência de σ ser
+    homogênea de grau 1 nos pesos (decomposição de Euler). Isso não é
+    aproximação, e é o que torna a decomposição legítima: cada parcela é
+    uma fatia de um todo que fecha.
+
+    É aqui que mora a diferença entre concentração de capital e concentração
+    de risco. Um ativo com 14% do capital pode responder por 30% do risco se
+    for volátil e correlacionado com o resto da carteira.
+    """
+    w = _alinhar_pesos(covariancia, pesos)
+    return pd.Series(
+        w * contribuicao_marginal(covariancia, pesos).to_numpy(),
+        index=covariancia.index,
+        name="contribuicao",
+    )
+
+
+def tabela_contribuicao(
+    covariancia: pd.DataFrame, pesos: pd.Series
+) -> pd.DataFrame:
+    """Capital contra risco, lado a lado, por ativo.
+
+    Colunas:
+      peso_capital  fração do dinheiro
+      peso_risco    fração da volatilidade
+      razao         peso_risco / peso_capital; acima de 1 o ativo pesa mais
+                    no risco do que no bolso
+    """
+    w = pd.Series(_alinhar_pesos(covariancia, pesos), index=covariancia.index)
+    contribuicao = contribuicao_risco(covariancia, pesos)
+    total = float(contribuicao.sum())
+
+    peso_risco = contribuicao / total
+    return pd.DataFrame(
+        {
+            "peso_capital": w,
+            "volatilidade": np.sqrt(np.diag(covariancia.to_numpy())),
+            "marginal": contribuicao_marginal(covariancia, pesos),
+            "contribuicao": contribuicao,
+            "peso_risco": peso_risco,
+            "razao": peso_risco / w.where(w != 0, np.nan),
+        }
+    ).sort_values("peso_risco", ascending=False)
+
+
+def contribuicao_por_bloco(
+    covariancia: pd.DataFrame, pesos: pd.Series, mapa: pd.Series
+) -> pd.DataFrame:
+    """Capital contra risco, agregado por categoria de um bloco.
+
+    A agregação é legítima porque as contribuições somam — ver
+    `contribuicao_risco`. Somar volatilidades individuais, em contraste,
+    não teria sentido nenhum.
+    """
+    from carteira.blocos import agrupar
+
+    w = pd.Series(_alinhar_pesos(covariancia, pesos), index=covariancia.index)
+    contribuicao = contribuicao_risco(covariancia, pesos)
+
+    capital = agrupar(w, mapa)
+    risco = agrupar(contribuicao, mapa)
+    peso_risco = risco / risco.sum()
+
+    return pd.DataFrame(
+        {
+            "peso_capital": capital,
+            "peso_risco": peso_risco,
+            "razao": peso_risco / capital.where(capital != 0, np.nan),
+        }
+    ).sort_values("peso_risco", ascending=False)
+
+
 def e_positiva_definida(matriz: pd.DataFrame, tolerancia: float = 1e-12) -> bool:
     """Toda carteira tem variância estritamente positiva?
 

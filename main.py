@@ -10,6 +10,9 @@
     python main.py --risco --janela 5     # outra janela, em anos
     python main.py --comparar      # compara regras de alocação
     python main.py --comparar --janela 5  # idem, em outra janela
+    python main.py --validar       # mesma comparação, mas fora da amostra
+    python main.py --validar --modo ancorada --treino 48
+    python main.py --comparar --tickers PETR4,VALE3,WEGE3,IVVB11
 """
 
 import argparse
@@ -216,6 +219,53 @@ def rodar_comparacao(
     print(pd.DataFrame(carteiras).map(lambda v: f"{v:6.1%}").to_string())
 
 
+def rodar_validacao(
+    janela_anos: float, treino: int, modo: str, sem_cdi: bool,
+    tickers: str | None = None,
+) -> None:
+    """Validação deslizante: estima com o passado, mede no futuro.
+
+    Diferente de `--comparar`, aqui nenhuma regra é avaliada na janela em
+    que foi estimada. Os números saem bem menos impressionantes, e é esse o
+    ponto.
+    """
+    from carteira.alocacoes import regras_sobre_retornos
+    from carteira.cdi import CDIIndisponivel, alinhar, cdi_mensal
+    from carteira.precos import historico_total
+    from carteira.series import retornos_mensais
+    from carteira.validacao import deslizante, formatar as formatar_validacao, resumo
+
+    universo, alvo = resolver_universo(tickers)
+    inicio = pd.Timestamp.today().normalize() - pd.DateOffset(
+        days=round(janela_anos * 365)
+    )
+    precos = historico_total(universo, inicio, cache=CACHE_PRECOS_TOTAL)
+    retornos = retornos_mensais(precos)
+
+    regras = regras_sobre_retornos()
+    if alvo is not None:
+        pesos_alvo = alvo.reindex(retornos.columns).fillna(0.0)
+        # O alvo é fixo por definição: não se reestima, então entra na
+        # validação como uma regra que ignora os dados. É a comparação mais
+        # honesta possível, porque ele também não pagou custo de estimativa.
+        regras["alvo_atual"] = lambda _dados, p=pesos_alvo: p
+
+    resultado = deslizante(retornos, regras, treino=treino, modo=modo)
+
+    cdi = None
+    if not sem_cdi:
+        try:
+            indice = resultado["retornos"].index
+            cdi = alinhar(
+                cdi_mensal(indice.min().replace(day=1), cache=CACHE_CDI), indice
+            )
+        except CDIIndisponivel as erro:
+            print(f"\nSem CDI: {erro}")
+
+    print()
+    print(formatar_validacao(resultado, resumo(resultado, cdi)))
+
+
 def rodar_grafico(movimentacoes, ledger, ano: int | None) -> None:
     from carteira.graficos import (
         grafico_proventos_ano,
@@ -291,6 +341,9 @@ def main(
     comparar_alocacoes: bool = False,
     sem_cdi: bool = False,
     tickers: str | None = None,
+    validar: bool = False,
+    treino: int = 36,
+    modo: str = "rolante",
 ) -> None:
     movimentacoes, ledger = carregar_tudo()
 
@@ -301,7 +354,9 @@ def main(
     )
     mostrar_conferencia(movimentacoes, ledger)
 
-    if comparar_alocacoes:
+    if validar:
+        rodar_validacao(janela, treino, modo, sem_cdi, tickers)
+    elif comparar_alocacoes:
         rodar_comparacao(ledger, janela, sem_cdi, tickers)
     elif risco:
         rodar_risco(ledger, usar_alvo, janela)
@@ -334,6 +389,15 @@ if __name__ == "__main__":
                         help="Compara regras de alocação (1/N, inverso da "
                              "volatilidade, paridade de risco, mínima "
                              "variância) com o alvo atual")
+    parser.add_argument("--validar", action="store_true",
+                        help="Validação deslizante: estima com o passado e "
+                             "mede no futuro, sem circularidade")
+    parser.add_argument("--treino", type=int, default=36,
+                        help="Com --validar: meses de treino (padrão: 36)")
+    parser.add_argument("--modo", type=str, default="rolante",
+                        choices=["rolante", "ancorada"],
+                        help="Com --validar: janela de tamanho fixo (rolante) "
+                             "ou crescente (ancorada)")
     parser.add_argument("--tickers", type=str, default=None,
                         help="Lista separada por vírgula para analisar em vez "
                              "do alvo.json, p.ex. PETR4,VALE3,WEGE3. Não "
@@ -342,4 +406,5 @@ if __name__ == "__main__":
                         help="Com --comparar: não busca o CDI no Banco Central")
     args = parser.parse_args()
     main(args.aporte, args.grafico, args.ano, args.risco, args.alvo, args.janela,
-         args.comparar, args.sem_cdi, args.tickers)
+         args.comparar, args.sem_cdi, args.tickers, args.validar,
+         args.treino, args.modo)

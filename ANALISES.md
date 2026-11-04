@@ -18,8 +18,13 @@ encaixe na arquitetura atual e critério de pronto.
 - **Fase 3 — adiada.** Com 5,01 apostas efetivas medidas, a hipótese de
   concentração perdeu força e os cenários de estresse deixaram de ser
   prioridade.
+- **Validação deslizante — FEITA.** `carteira/validacao.py` com janela
+  rolante e ancorada, medindo giro e sem vazamento de futuro. Três regras
+  novas que usam retorno (`markowitz`, `markowitz_encolhido`, `tendencia`)
+  entraram para serem testadas. Comando `main.py --validar`.
 - **Fase 4 — pendente.** Bandas de rebalanceamento, proventos como
   instrumento, custos e imposto. É o que responde "quando comprar ou vender".
+  O custo de transição é o item que pode inverter a decisão de mudar o alvo.
 
 Extras não previstos no plano: extrato sintético em `tests/dados/`, suíte de
 185 testes que antes não rodava em clone limpo, correção do mês em andamento
@@ -30,6 +35,9 @@ componentes principais se mostraram melhores que o agrupamento manual.
 
     python main.py --risco --alvo --janela 3
     python main.py --comparar --janela 3
+    python main.py --validar --janela 10
+    python main.py --validar --janela 10 --modo ancorada
+    python main.py --comparar --tickers PETR4,VALE3,WEGE3,IVVB11
 
 Rode os dois em `--janela 1`, `3` e `5`. Se o diagnóstico mudar muito entre
 as janelas, isso sozinho já diz que a estimativa não é estável o bastante

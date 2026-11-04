@@ -264,3 +264,51 @@ def test_poucas_iteracoes_falham_com_mensagem_util():
 
     with pytest.raises(NaoConvergiu, match="desvio de"):
         paridade_risco(cov, max_iteracoes=2)
+
+
+def _cov_com_protecao(rho_negativo, rho_resto=0.55):
+    """Seis ativos correlacionados entre si e um com correlação negativa.
+
+    É a estrutura da carteira real: papéis brasileiros andando juntos e um
+    fundo de índice internacional andando ao contrário.
+    """
+    nomes = ["A", "B", "C", "D", "E", "F", "PROTECAO"]
+    dp = np.array([0.20, 0.22, 0.25, 0.28, 0.19, 0.17, 0.14])
+    c = np.full((7, 7), rho_resto)
+    np.fill_diagonal(c, 1.0)
+    c[6, :6] = rho_negativo
+    c[:6, 6] = rho_negativo
+    c[6, 6] = 1.0
+    return pd.DataFrame(c * np.outer(dp, dp), index=nomes, columns=nomes)
+
+
+@pytest.mark.parametrize("rho", [-0.1, -0.3, -0.5, -0.7])
+def test_paridade_converge_com_ativo_de_correlacao_negativa(rho):
+    """O caso que derrubava a versão por ponto fixo.
+
+    A partir de -0,3 a iteração multiplicativa divergia: empurrava o peso do
+    ativo protetor para cima sem nunca fazê-lo carregar sua fatia de risco.
+    A solução existe — o problema é convexo — e a descida coordenada chega
+    nela.
+    """
+    cov = _cov_com_protecao(rho)
+    pesos = paridade_risco(cov)
+    fracao = contribuicao_risco(cov, pesos)
+
+    assert (fracao / fracao.sum()).to_numpy() == pytest.approx([1 / 7] * 7, abs=1e-8)
+    assert (pesos > 0).all()
+    assert pesos.sum() == pytest.approx(1.0)
+
+
+def test_protecao_ganha_mais_peso_quanto_mais_negativa_a_correlacao():
+    """Comportamento esperado: quem protege mais, carrega mais.
+
+    Confere também que a solução é contínua na correlação, o que o ponto
+    fixo não conseguia mostrar porque simplesmente falhava.
+    """
+    pesos = [
+        paridade_risco(_cov_com_protecao(rho))["PROTECAO"]
+        for rho in (-0.1, -0.3, -0.5, -0.7)
+    ]
+
+    assert pesos == sorted(pesos)

@@ -106,57 +106,64 @@ def paridade_risco(
     dois ativos muito correlacionados são tratados quase como um só, e o
     peso conjunto deles cai.
 
-    Resolve por ponto fixo com amortecimento. A cada passo, o peso de quem
-    contribui risco demais encolhe e o de quem contribui de menos cresce; o
-    expoente 0,5 amortece o passo e evita oscilação em torno da solução.
+    COMO RESOLVE, E POR QUE NÃO POR PONTO FIXO
+
+    A primeira versão usava ponto fixo amortecido: encolher o peso de quem
+    contribui risco demais, aumentar o de quem contribui de menos. Simples,
+    e funciona na maioria dos casos — mas quebra quando algum ativo tem
+    correlação suficientemente NEGATIVA com o resto. A partir de −0,3 a
+    iteração passa a divergir, porque empurra o peso do ativo protetor para
+    cima sem nunca conseguir fazê-lo carregar sua fatia de risco.
+
+    Isso não significa que a solução não exista. A paridade de risco é o
+    mínimo de ½·wᵀΣw − (1/N)·Σ ln(wᵢ), que é estritamente convexo no ortante
+    positivo: existe e é única para qualquer Σ positiva definida. A barreira
+    logarítmica impede peso zero, e a condição de primeira ordem é
+    exatamente wᵢ·(Σw)ᵢ constante, que é a definição da paridade.
+
+    Resolve-se por descida coordenada cíclica. Fixados os demais pesos, a
+    condição de otimalidade em wᵢ vira uma equação do segundo grau:
+
+        Σᵢᵢ·wᵢ² + bᵢ·wᵢ − 1/N = 0,   com bᵢ = (Σw)ᵢ − Σᵢᵢ·wᵢ
+
+    cuja raiz positiva tem forma fechada. Sem passo, sem amortecimento, sem
+    ajuste — e converge com correlação negativa, que é o caso do ativo de
+    proteção numa carteira local.
     """
     matriz = _validar(covariancia)
     n = len(matriz)
-    alvo = 1.0 / n
+    diagonal = np.diag(matriz)
+    if np.any(diagonal <= 0):
+        zerados = [covariancia.index[i] for i in np.where(diagonal <= 0)[0]]
+        raise ValueError(f"Variância nula ou negativa em: {zerados}")
 
-    w = np.full(n, 1.0 / n)
-    melhor_w, melhor_erro = w, np.inf
+    # Começa fora do simplex de propósito: a formulação com barreira
+    # trabalha com pesos não normalizados, e a normalização é o último passo.
+    w = np.full(n, 1.0 / np.sqrt(n))
 
     for _ in range(max_iteracoes):
-        sigma_w = matriz @ w
-        variancia = float(w @ sigma_w)
-        if variancia <= 0:
-            raise ValueError("Variância nula: paridade de risco indefinida.")
-
-        fracao = w * sigma_w / variancia
-        erro = float(np.max(np.abs(fracao - alvo)))
-        if erro < melhor_erro:
-            melhor_w, melhor_erro = w, erro
-        if erro < TOLERANCIA:
+        anterior = w.copy()
+        for i in range(n):
+            b = float(matriz[i] @ w - diagonal[i] * w[i])
+            w[i] = (-b + np.sqrt(b * b + 4.0 * diagonal[i] / n)) / (
+                2.0 * diagonal[i]
+            )
+        if np.max(np.abs(w - anterior)) < TOLERANCIA:
             break
 
-        proximo = w * np.sqrt(alvo / np.maximum(fracao, 1e-300))
-        proximo = np.maximum(proximo, 1e-300)
-        proximo = proximo / proximo.sum()
+    w = w / w.sum()
 
-        # Estagnação: os pesos pararam de mudar dentro da precisão da
-        # máquina. Continuar iterando não melhora nada — e foi exatamente
-        # isso que fazia a versão anterior rodar 10.000 vezes e então falhar
-        # com uma solução boa na mão, só porque o erro tinha parado num
-        # patamar pouco acima de uma tolerância escolhida no chute.
-        if np.max(np.abs(proximo - w)) < 1e-15:
-            w = proximo
-            break
-        w = proximo
-
-    # O critério de aceitação é a QUALIDADE da resposta, não o número de
-    # iterações. 1e-6 de desvio na fração de risco é irrelevante para
-    # qualquer decisão de carteira; recusar isso seria rigor de fachada.
-    if melhor_erro > TOLERANCIA_ACEITAVEL:
+    sigma_w = matriz @ w
+    fracao = w * sigma_w / float(w @ sigma_w)
+    desvio = float(np.max(np.abs(fracao - 1.0 / n)))
+    if desvio > TOLERANCIA_ACEITAVEL:
         raise NaoConvergiu(
-            f"Paridade de risco parou com desvio de {melhor_erro:.2e} na "
-            f"fração de risco, acima do aceitável de "
-            f"{TOLERANCIA_ACEITAVEL:.0e}.\n"
-            "Isso costuma indicar covariância quase singular — confira se "
-            "algum ativo tem série de preço repetida ou com buraco."
+            f"Paridade de risco parou com desvio de {desvio:.2e} na fração "
+            f"de risco, acima do aceitável de {TOLERANCIA_ACEITAVEL:.0e}.\n"
+            "Confira se a covariância é positiva definida."
         )
 
-    return _serie(melhor_w / melhor_w.sum(), covariancia, "paridade_risco")
+    return _serie(w, covariancia, "paridade_risco")
 
 
 def minima_variancia(

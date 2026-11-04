@@ -5,9 +5,9 @@ import sys
 
 VALID_HEADERS = ['Entrada/Saída', 'Data', 'Movimentação', 'Produto', 'Instituição', 'Quantidade', 'Preço unitário', 'Valor da Operação']
 
-def get_folder():
+def get_folder(folder=None):
     try:
-        folder = Path(__file__).parent / "extratos"
+        folder = Path(folder) if folder else Path(__file__).parent / "extratos"
         excel_files = sorted(f for f in folder.glob("*.xlsx") if not f.name.startswith("~$"))
         return excel_files
 
@@ -15,8 +15,12 @@ def get_folder():
         print("No Excel files on folder")
         return []
 
-def data_frame_pattern():
-    excel_files = get_folder()
+def data_frame_pattern(folder=None):
+    excel_files = get_folder(folder)
+    if not excel_files:
+        print("No Excel files on folder")
+        sys.exit(1)
+
     df = pd.read_excel(excel_files[0], dtype=str)
     headers = df.columns.tolist()
 

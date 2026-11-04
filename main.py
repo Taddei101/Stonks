@@ -141,7 +141,28 @@ def rodar_risco(ledger, usar_alvo: bool, janela_anos: float) -> None:
     print(formatar_risco(analise))
 
 
-def rodar_comparacao(ledger, janela_anos: float, sem_cdi: bool) -> None:
+def resolver_universo(tickers: str | None):
+    """Decide quais papéis entram na análise, e com que pesos de referência.
+
+    Sem `--tickers`, usa o alvo. Com `--tickers`, usa a lista dada e o alvo
+    deixa de participar — é o que permite testar um conjunto hipotético sem
+    mexer no arquivo que comanda o `--aporte`.
+
+    Devolve (lista de tickers, pesos do alvo ou None).
+    """
+    if not tickers:
+        alvo = carregar_alvo(ARQUIVO_ALVO)
+        return sorted(alvo.index), alvo
+
+    lista = sorted({t.strip().upper() for t in tickers.split(",") if t.strip()})
+    if len(lista) < 2:
+        raise SystemExit("--tickers precisa de pelo menos dois papéis.")
+    return lista, None
+
+
+def rodar_comparacao(
+    ledger, janela_anos: float, sem_cdi: bool, tickers: str | None = None
+) -> None:
     """Compara regras de alocação sobre o mesmo período.
 
     Todas as regras são calculadas sobre a MESMA matriz de covariância
@@ -155,15 +176,18 @@ def rodar_comparacao(ledger, janela_anos: float, sem_cdi: bool) -> None:
     from carteira.risco import matriz_covariancia
     from carteira.series import retorno_carteira, retornos_mensais
 
-    alvo = carregar_alvo(ARQUIVO_ALVO)
+    universo, alvo = resolver_universo(tickers)
     inicio = pd.Timestamp.today().normalize() - pd.DateOffset(
         days=round(janela_anos * 365)
     )
-    precos = historico_total(sorted(alvo.index), inicio, cache=CACHE_PRECOS_TOTAL)
+    precos = historico_total(universo, inicio, cache=CACHE_PRECOS_TOTAL)
     retornos = retornos_mensais(precos)
 
     carteiras = todas(matriz_covariancia(retornos))
-    carteiras["alvo_atual"] = alvo.reindex(retornos.columns).fillna(0.0)
+    if alvo is not None:
+        carteiras["alvo_atual"] = alvo.reindex(retornos.columns).fillna(0.0)
+    else:
+        print(f"\nUniverso: {', '.join(universo)} (alvo.json fora da análise)")
 
     series = {
         nome: retorno_carteira(retornos, pesos)
@@ -266,6 +290,7 @@ def main(
     janela: float = 3.0,
     comparar_alocacoes: bool = False,
     sem_cdi: bool = False,
+    tickers: str | None = None,
 ) -> None:
     movimentacoes, ledger = carregar_tudo()
 
@@ -277,7 +302,7 @@ def main(
     mostrar_conferencia(movimentacoes, ledger)
 
     if comparar_alocacoes:
-        rodar_comparacao(ledger, janela, sem_cdi)
+        rodar_comparacao(ledger, janela, sem_cdi, tickers)
     elif risco:
         rodar_risco(ledger, usar_alvo, janela)
     elif grafico:
@@ -309,8 +334,12 @@ if __name__ == "__main__":
                         help="Compara regras de alocação (1/N, inverso da "
                              "volatilidade, paridade de risco, mínima "
                              "variância) com o alvo atual")
+    parser.add_argument("--tickers", type=str, default=None,
+                        help="Lista separada por vírgula para analisar em vez "
+                             "do alvo.json, p.ex. PETR4,VALE3,WEGE3. Não "
+                             "altera o alvo nem o --aporte")
     parser.add_argument("--sem-cdi", action="store_true",
                         help="Com --comparar: não busca o CDI no Banco Central")
     args = parser.parse_args()
     main(args.aporte, args.grafico, args.ano, args.risco, args.alvo, args.janela,
-         args.comparar, args.sem_cdi)
+         args.comparar, args.sem_cdi, args.tickers)

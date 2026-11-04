@@ -238,3 +238,206 @@ REGRAS = {
 def todas(covariancia: pd.DataFrame) -> dict[str, pd.Series]:
     """Aplica todas as regras e devolve {nome: pesos}."""
     return {nome: regra(covariancia) for nome, regra in REGRAS.items()}
+
+
+# ==========================================================================
+# Regras que USAM retorno esperado
+# ==========================================================================
+#
+# As de cima deliberadamente ignoram retorno. Estas não — e por isso herdam
+# o problema que as outras evitam: a estimativa de retorno médio é ruidosa
+# demais, e o otimizador carrega peso justamente no ativo que PARECEU render
+# mais, o que na maior parte das vezes é ruído.
+#
+# Existem aqui para serem TESTADAS, não para serem recomendadas. A pergunta
+# "incluir retorno ajuda?" só tem resposta fora da amostra, e é para isso
+# que serve `carteira.validacao`.
+
+
+def _max_sharpe(
+    retornos_esperados: np.ndarray,
+    matriz: np.ndarray,
+    max_iteracoes: int = 2000,
+) -> np.ndarray:
+    """Máximo índice de Sharpe no simplex, por gradiente projetado.
+
+    S(w) = wᵀμ / √(wᵀΣw), e o gradiente é μ/σ − (wᵀμ)(Σw)/σ³.
+
+    Sharpe é invariante a escala, então o passo é normalizado pela norma do
+    gradiente — sem isso o tamanho do passo dependeria das unidades dos
+    retornos, e o mesmo código se comportaria diferente em base mensal e
+    anual.
+
+    Vários pontos de partida porque a função não é côncava no simplex. Com
+    7 ativos o custo é irrelevante e remove a dependência do ponto inicial.
+    """
+    n = len(retornos_esperados)
+    if np.all(retornos_esperados <= 0):
+        # Sem nenhum retorno positivo, maximizar Sharpe não faz sentido:
+        # qualquer carteira tem numerador negativo e "melhor" vira "menos
+        # pior", o que é outra pergunta. Devolve mínima variância.
+        return None
+
+    partidas = [np.full(n, 1.0 / n)]
+    for i in range(n):
+        canto = np.full(n, 0.01 / (n - 1))
+        canto[i] = 0.99
+        partidas.append(canto / canto.sum())
+
+    melhor_w, melhor_s = None, -np.inf
+    for inicio in partidas:
+        w = inicio.copy()
+        for passo in range(max_iteracoes):
+            sigma = float(np.sqrt(max(w @ matriz @ w, 1e-300)))
+            retorno = float(w @ retornos_esperados)
+            gradiente = (
+                retornos_esperados / sigma - retorno * (matriz @ w) / sigma**3
+            )
+            norma = np.linalg.norm(gradiente)
+            if norma < 1e-14:
+                break
+            # Expoente 0,85 e não 0,5: calibrado contra busca exaustiva numa
+            # grade de 1201x1201. Com 0,5 o passo final ainda é de 1e-2 e a
+            # solução para a 6e-3 do ótimo; com 0,85 chega a 5e-4, que é
+            # abaixo do ruído de estimativa de qualquer entrada real.
+            tamanho = 0.5 / (passo + 1) ** 0.85
+            novo = projetar_no_simplex(w + tamanho * gradiente / norma)
+            if np.max(np.abs(novo - w)) < 1e-12:
+                w = novo
+                break
+            w = novo
+
+        sigma = float(np.sqrt(max(w @ matriz @ w, 1e-300)))
+        s = float(w @ retornos_esperados) / sigma
+        if s > melhor_s:
+            melhor_w, melhor_s = w, s
+
+    return melhor_w
+
+
+def markowitz(retornos: pd.DataFrame, encolher_medias: bool = False) -> pd.Series:
+    """Máximo Sharpe com a média histórica como retorno esperado.
+
+    É o método que a maioria das pessoas chama de "Markowitz", e o que
+    produz pesos extremos e instáveis entre janelas. Está aqui para ser
+    medido contra as alternativas, não como recomendação.
+
+    A covariância usa encolhimento mesmo aqui — sem isso a comparação
+    confundiria "usar retorno" com "usar covariância ruim", e a pergunta de
+    interesse é só a primeira.
+    """
+    from carteira.risco import matriz_covariancia
+
+    covariancia = matriz_covariancia(retornos)
+    medias = retornos.mean().to_numpy()
+    if encolher_medias:
+        medias = bayes_stein(retornos, covariancia)
+
+    pesos = _max_sharpe(medias, covariancia.to_numpy())
+    if pesos is None:
+        return minima_variancia(covariancia).rename("markowitz")
+
+    nome = "markowitz_encolhido" if encolher_medias else "markowitz"
+    return _serie(pesos, covariancia, nome)
+
+
+def markowitz_encolhido(retornos: pd.DataFrame) -> pd.Series:
+    """Markowitz com as médias puxadas por Bayes-Stein. Ver `bayes_stein`."""
+    return markowitz(retornos, encolher_medias=True)
+
+
+def bayes_stein(retornos: pd.DataFrame, covariancia: pd.DataFrame) -> np.ndarray:
+    """Encolhe as médias amostrais na direção da carteira de mínima variância.
+
+    Estimador de Jorion (1986). A lógica é a mesma do Ledoit-Wolf, aplicada
+    ao primeiro momento: a média amostral de cada ativo é muito ruidosa, e
+    puxá-las todas em direção a um valor comum reduz o erro agregado mesmo
+    introduzindo viés em cada uma.
+
+    A intensidade sai dos dados:
+
+        w = (N + 2) / ((N + 2) + T · (μ − μ₀·1)ᵀ Σ⁻¹ (μ − μ₀·1))
+
+    Encolhe mais quando há poucos dados (T pequeno) ou quando as médias
+    estão próximas entre si — caso em que a diferença observada é
+    provavelmente ruído.
+
+    O alvo μ₀ é o retorno da carteira de mínima variância, e não a média
+    geral simples, porque é o ponto do conjunto eficiente que independe
+    completamente das estimativas de retorno.
+    """
+    T, N = retornos.shape
+    medias = retornos.mean().to_numpy()
+    matriz = covariancia.to_numpy()
+
+    try:
+        inversa_uns = np.linalg.solve(matriz, np.ones(N))
+    except np.linalg.LinAlgError:
+        return medias
+
+    w_minvar = inversa_uns / inversa_uns.sum()
+    mu_zero = float(w_minvar @ medias)
+
+    desvio = medias - mu_zero
+    try:
+        quadratico = float(desvio @ np.linalg.solve(matriz, desvio))
+    except np.linalg.LinAlgError:
+        return medias
+
+    if quadratico <= 0:
+        return np.full(N, mu_zero)
+
+    intensidade = (N + 2) / ((N + 2) + T * quadratico)
+    intensidade = float(np.clip(intensidade, 0.0, 1.0))
+
+    return intensidade * mu_zero + (1.0 - intensidade) * medias
+
+
+def inclinacao_log(precos_ou_retornos: pd.DataFrame, de_retornos: bool = True):
+    """Coeficiente angular da regressão do log do preço contra o tempo.
+
+    Por que o LOG e não o preço: regredir o preço em reais faz o coeficiente
+    depender do nível de preço, e aí uma ação de R$ 40 e outra de R$ 8 com a
+    mesma valorização percentual dão números diferentes — a comparação entre
+    papéis fica inválida.
+
+    Com log, o coeficiente é aproximadamente o retorno médio por período.
+    Essa equivalência é o ponto importante: usar a inclinação como sinal de
+    retorno é usar a média histórica, que é exatamente a estimativa cujo
+    intervalo de confiança é largo demais para decidir.
+    """
+    if de_retornos:
+        log_preco = np.log((1 + precos_ou_retornos).cumprod())
+    else:
+        log_preco = np.log(precos_ou_retornos)
+
+    t = np.arange(len(log_preco), dtype=float)
+    t = t - t.mean()
+    denominador = float(t @ t)
+    if denominador <= 0:
+        return pd.Series(0.0, index=log_preco.columns)
+
+    centrado = log_preco - log_preco.mean()
+    return (centrado.mul(t, axis=0).sum() / denominador).rename("inclinacao")
+
+
+def tendencia(retornos: pd.DataFrame) -> pd.Series:
+    """Peso proporcional à inclinação positiva do log-preço.
+
+    Formalização da regra intuitiva "se a tendência é de alta, ela vai bem".
+    Ativos com inclinação negativa ficam zerados; o resto divide o capital
+    na proporção da inclinação.
+
+    Quando nenhum ativo tem tendência positiva, cai para pesos iguais — a
+    alternativa seria ficar sem carteira, que não é uma resposta.
+    """
+    inclinacoes = inclinacao_log(retornos)
+    positivas = inclinacoes.clip(lower=0.0)
+
+    total = float(positivas.sum())
+    if total <= 0:
+        return pd.Series(
+            1.0 / len(inclinacoes), index=inclinacoes.index, name="tendencia"
+        )
+
+    return (positivas / total).rename("tendencia")

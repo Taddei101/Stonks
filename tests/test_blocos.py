@@ -24,7 +24,12 @@ def blocos():
 
 
 def test_le_as_dimensoes(blocos):
-    assert set(blocos) == {"setor", "controle", "moeda", "receita"}
+    """Uma dimensão só, de propósito.
+
+    Setor, moeda e receita saíram: os componentes principais já captam essa
+    estrutura e a captam melhor. Sobra o que a estatística não alcança.
+    """
+    assert set(blocos) == {"controle"}
 
 
 def test_nota_nao_vira_dimensao(blocos):
@@ -89,24 +94,17 @@ def test_agrupar_sem_categoria_falha():
 # --------------------------------------------------------------------------
 
 
-def test_concentracao_do_alvo_atual(blocos):
-    """Mede o que motivou este módulo: o alvo tem menos apostas que papéis.
+def test_exposicao_a_controle_estatal_do_alvo_atual(blocos):
+    """Documenta o estado atual, não impõe meta.
 
-    Sete tickers, mas em setor eles se reduzem a quatro grupos, e um único
-    grupo passa de um terço da carteira. Se o alvo mudar, este teste muda
-    junto — ele documenta o estado atual, não impõe uma meta.
+    É a exposição que os componentes principais não conseguem medir: risco
+    político não se manifestou na janela, então a correlação histórica entre
+    PETR4 e BBAS3 não o registra. Se o alvo mudar, este teste muda junto.
     """
     alvo = carregar_alvo(ARQUIVO_ALVO, avisar=None)
-    por_dimensao = resumo_por_dimensao(alvo, blocos)
+    controle = resumo_por_dimensao(alvo, blocos)["controle"]
 
-    setor = por_dimensao["setor"]
     assert len(alvo) == 7
-    assert len(setor) == 4
-    assert setor.iloc[0] > 0.30
-
-    # Exposição fora do Brasil, hoje residual.
-    assert por_dimensao["moeda"].get("USD", 0.0) < 0.05
-
-    # Toda dimensão tem de somar 100% da carteira.
-    for agrupado in por_dimensao.values():
-        assert agrupado.sum() == pytest.approx(1.0)
+    assert controle.sum() == pytest.approx(1.0)
+    assert controle["estatal_br"] == pytest.approx(0.2232, abs=0.001)
+    assert controle["golden_share"] == pytest.approx(0.3604, abs=0.001)

@@ -1,27 +1,30 @@
 {
   "_nota": [
-    "Mapeia cada ticker para os fatores de risco que o afetam. Um ativo",
-    "pertence a varios blocos ao mesmo tempo, e e isso que importa: dois",
-    "papeis de setores diferentes podem compartilhar o mesmo risco politico.",
+    "Exposicoes que a analise estatistica NAO consegue enxergar.",
     "",
-    "CONFIRA E AJUSTE. Controle acionario muda: a Copel deixou de ser",
-    "estatal na privatizacao de 2023 e virou corporacao com golden share do",
-    "estado do Parana. A Taesa e controlada pela ISA Energia Brasil, cujo",
-    "controlador final e estatal colombiano - risco de estado, mas de outro",
-    "pais e outro ciclo politico.",
+    "Este arquivo nao e uma taxonomia de setor. Agrupar por setor se mostrou",
+    "um metodo pior que os componentes principais e com erro proprio: VALE3 e",
+    "PETR4 foram agrupadas como commodities e os dados mostraram que estao em",
+    "fatores diferentes. Onde a estatistica funciona, ela decide.",
+    "",
+    "O que sobra aqui e so o que a estatistica nao alcanca: risco que fica",
+    "anos sem se manifestar e por isso nao aparece na correlacao da janela,",
+    "mas atinge varios papeis no mesmo dia quando vem.",
+    "",
+    "Controle acionario e o caso claro. Intervencao politica atinge PETR4 e",
+    "BBAS3 juntas, independentemente de a correlacao historica delas ser",
+    "baixa. Granularidade importa: a Copel deixou de ser estatal na",
+    "privatizacao de 2023 e virou corporacao com golden share do estado do",
+    "Parana, situacao parecida com a da Vale. A Taesa tem controlador final",
+    "estatal, mas colombiano - risco de estado em outro ciclo politico.",
+    "",
+    "Criterio para acrescentar uma dimensao nova: ela so entra se descrever",
+    "um risco que pode atingir varios ativos ao mesmo tempo E que nao esteja",
+    "visivel na matriz de correlacao. Se os componentes principais ja captam,",
+    "nao duplique aqui.",
     "",
     "Toda chave que comeca com _ e ignorada na leitura."
   ],
-
-  "setor": {
-    "ITUB4": "bancos",
-    "BBAS3": "bancos",
-    "VALE3": "commodities",
-    "PETR4": "commodities",
-    "CPLE3": "eletricas",
-    "TAEE11": "eletricas",
-    "IVVB11": "exterior"
-  },
 
   "controle": {
     "PETR4": "estatal_br",
@@ -31,25 +34,5 @@
     "TAEE11": "estatal_estrangeiro",
     "ITUB4": "privado",
     "IVVB11": "fundo"
-  },
-
-  "moeda": {
-    "ITUB4": "BRL",
-    "BBAS3": "BRL",
-    "VALE3": "BRL",
-    "PETR4": "BRL",
-    "CPLE3": "BRL",
-    "TAEE11": "BRL",
-    "IVVB11": "USD"
-  },
-
-  "receita": {
-    "ITUB4": "domestica",
-    "BBAS3": "domestica",
-    "CPLE3": "domestica",
-    "TAEE11": "domestica",
-    "VALE3": "exportadora",
-    "PETR4": "exportadora",
-    "IVVB11": "externa"
   }
 }

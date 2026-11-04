@@ -65,7 +65,16 @@ def cdi_diario(
         guardado = pd.read_parquet(cache)
         serie = guardado.set_index("data")["cdi"]
         recorte = serie[(serie.index >= inicio) & (serie.index <= fim)]
-        if len(recorte) and recorte.index.max() >= fim - pd.Timedelta(days=7):
+        # Verificar só o FIM não basta, e essa foi a origem de um bug real:
+        # o cache gravado numa janela de 3 anos cobria o fim de uma janela de
+        # 10 anos perfeitamente, e era devolvido faltando os 7 primeiros anos.
+        # A série voltava truncada sem erro, e o alinhamento é que reclamava,
+        # bem longe daqui. Tem de cobrir as duas pontas.
+        cobre_inicio = len(recorte) and recorte.index.min() <= inicio + pd.Timedelta(
+            days=7
+        )
+        cobre_fim = len(recorte) and recorte.index.max() >= fim - pd.Timedelta(days=7)
+        if cobre_inicio and cobre_fim:
             return recorte.sort_index()
 
     bruto = _buscar(inicio, fim)

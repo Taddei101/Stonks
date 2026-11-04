@@ -180,3 +180,23 @@ def test_mes_completo_quando_se_pede_desde_o_dia_primeiro(sgs_falso):
 
     assert pd.Timestamp("2023-12-31") not in pelo_rotulo.index
     assert pd.Timestamp("2023-12-31") in pelo_primeiro_dia.index
+
+
+def test_cache_de_janela_curta_nao_serve_para_janela_longa(tmp_path, sgs_falso):
+    """O bug que fez a janela de 10 anos rodar sem CDI.
+
+    O cache gravado numa janela de 3 anos cobre o FIM de uma janela de 10
+    anos perfeitamente. Verificando só essa ponta, ele era devolvido
+    faltando os 7 primeiros anos — truncado, sem erro, e a falha aparecia
+    bem longe daqui, no alinhamento.
+    """
+    cache = tmp_path / "cdi.parquet"
+    hoje = pd.Timestamp.today().normalize()
+
+    cdi_diario(hoje - pd.Timedelta(days=3 * 365), hoje, cache=cache)
+    assert len(sgs_falso) == 1
+
+    longa = cdi_diario(hoje - pd.Timedelta(days=10 * 365), hoje, cache=cache)
+
+    assert len(sgs_falso) == 2, "deveria ter buscado de novo"
+    assert longa.index.min() <= hoje - pd.Timedelta(days=10 * 365 - 7)

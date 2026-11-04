@@ -161,3 +161,22 @@ def test_mes_faltando_falha_em_vez_de_virar_zero():
 
     with pytest.raises(CDIIndisponivel, match="Sem CDI"):
         alinhar(incompleto, indice)
+
+
+def test_mes_completo_quando_se_pede_desde_o_dia_primeiro(sgs_falso):
+    """O bug que derrubava o CDI inteiro na janela de 3 anos.
+
+    O índice dos retornos mensais traz o último dia do mês. Pedir o CDI a
+    partir dessa data deixa o primeiro mês com um pedaço — ou com nada, se o
+    dia cair em fim de semana. 31/12/2023 foi um domingo: o balde de
+    dezembro ficava vazio, o alinhamento falhava e a comparação inteira
+    rodava sem CDI.
+    """
+    rotulo = pd.Timestamp("2023-12-31")
+    assert rotulo.dayofweek == 6, "31/12/2023 foi domingo"
+
+    pelo_rotulo = cdi_mensal(rotulo, "2024-02-29")
+    pelo_primeiro_dia = cdi_mensal(rotulo.replace(day=1), "2024-02-29")
+
+    assert pd.Timestamp("2023-12-31") not in pelo_rotulo.index
+    assert pd.Timestamp("2023-12-31") in pelo_primeiro_dia.index

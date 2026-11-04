@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 
 from carteira.alocacoes import (
+    NaoConvergiu,
     inverso_volatilidade,
     minima_variancia,
     minima_variancia_sem_restricao,
@@ -215,3 +216,51 @@ def test_volatilidade_nula_falha():
 
     with pytest.raises(ValueError):
         inverso_volatilidade(cov)
+
+
+# --------------------------------------------------------------------------
+# robustez do criterio de parada
+# --------------------------------------------------------------------------
+
+
+def test_paridade_nao_falha_so_por_estagnar_acima_da_tolerancia_ideal():
+    """Matriz mal condicionada: a iteração estaciona, e tudo bem.
+
+    A versão anterior rodava 10.000 iterações e levantava erro mesmo com uma
+    solução boa na mão, porque exigia um desvio de 1e-10 escolhido no chute.
+    O critério agora é a qualidade da resposta.
+    """
+    dp = np.array([0.001, 0.05, 0.06, 0.30, 0.90])
+    corr = np.full((5, 5), 0.995)
+    np.fill_diagonal(corr, 1.0)
+    cov = pd.DataFrame(
+        corr * np.outer(dp, dp),
+        index=[f"A{i}" for i in range(5)],
+        columns=[f"A{i}" for i in range(5)],
+    )
+
+    pesos = paridade_risco(cov)
+    fracao = contribuicao_risco(cov, pesos)
+    fracao = fracao / fracao.sum()
+
+    assert pesos.sum() == pytest.approx(1.0)
+    assert fracao.to_numpy() == pytest.approx([1 / 5] * 5, abs=1e-6)
+
+
+def test_paridade_devolve_a_melhor_iteracao_e_nao_a_ultima():
+    """Se a iteração oscilar no fim, vale a melhor que ela encontrou."""
+    cov = _cov([0.08, 0.16, 0.32], 0.9)
+    pesos = paridade_risco(cov)
+    fracao = contribuicao_risco(cov, pesos)
+
+    assert (fracao / fracao.sum()).to_numpy() == pytest.approx(
+        [1 / 3] * 3, abs=1e-8
+    )
+
+
+def test_poucas_iteracoes_falham_com_mensagem_util():
+    """Com teto baixo demais, a mensagem diz o desvio atingido."""
+    cov = _cov([0.001, 0.05, 0.90], 0.99)
+
+    with pytest.raises(NaoConvergiu, match="desvio de"):
+        paridade_risco(cov, max_iteracoes=2)

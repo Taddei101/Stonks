@@ -24,6 +24,9 @@ import pandas as pd
 
 MAX_ITERACOES = 10_000
 TOLERANCIA = 1e-10
+# Desvio ainda aceitavel quando a iteracao estaciona antes da tolerancia
+# ideal. 1e-6 na fracao de risco e irrelevante para qualquer decisao.
+TOLERANCIA_ACEITAVEL = 1e-6
 
 
 class NaoConvergiu(RuntimeError):
@@ -112,6 +115,8 @@ def paridade_risco(
     alvo = 1.0 / n
 
     w = np.full(n, 1.0 / n)
+    melhor_w, melhor_erro = w, np.inf
+
     for _ in range(max_iteracoes):
         sigma_w = matriz @ w
         variancia = float(w @ sigma_w)
@@ -119,18 +124,39 @@ def paridade_risco(
             raise ValueError("Variância nula: paridade de risco indefinida.")
 
         fracao = w * sigma_w / variancia
-        if np.max(np.abs(fracao - alvo)) < TOLERANCIA:
+        erro = float(np.max(np.abs(fracao - alvo)))
+        if erro < melhor_erro:
+            melhor_w, melhor_erro = w, erro
+        if erro < TOLERANCIA:
             break
 
-        w = w * np.sqrt(alvo / np.maximum(fracao, 1e-300))
-        w = np.maximum(w, 1e-300)
-        w = w / w.sum()
-    else:
+        proximo = w * np.sqrt(alvo / np.maximum(fracao, 1e-300))
+        proximo = np.maximum(proximo, 1e-300)
+        proximo = proximo / proximo.sum()
+
+        # Estagnação: os pesos pararam de mudar dentro da precisão da
+        # máquina. Continuar iterando não melhora nada — e foi exatamente
+        # isso que fazia a versão anterior rodar 10.000 vezes e então falhar
+        # com uma solução boa na mão, só porque o erro tinha parado num
+        # patamar pouco acima de uma tolerância escolhida no chute.
+        if np.max(np.abs(proximo - w)) < 1e-15:
+            w = proximo
+            break
+        w = proximo
+
+    # O critério de aceitação é a QUALIDADE da resposta, não o número de
+    # iterações. 1e-6 de desvio na fração de risco é irrelevante para
+    # qualquer decisão de carteira; recusar isso seria rigor de fachada.
+    if melhor_erro > TOLERANCIA_ACEITAVEL:
         raise NaoConvergiu(
-            f"Paridade de risco não convergiu em {max_iteracoes} iterações."
+            f"Paridade de risco parou com desvio de {melhor_erro:.2e} na "
+            f"fração de risco, acima do aceitável de "
+            f"{TOLERANCIA_ACEITAVEL:.0e}.\n"
+            "Isso costuma indicar covariância quase singular — confira se "
+            "algum ativo tem série de preço repetida ou com buraco."
         )
 
-    return _serie(w / w.sum(), covariancia, "paridade_risco")
+    return _serie(melhor_w / melhor_w.sum(), covariancia, "paridade_risco")
 
 
 def minima_variancia(

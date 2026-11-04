@@ -173,8 +173,13 @@ def rodar_comparacao(ledger, janela_anos: float, sem_cdi: bool) -> None:
     cdi = None
     if not sem_cdi:
         try:
+            # O indice dos retornos traz o ULTIMO dia de cada mes. Pedir o
+            # CDI a partir dessa data deixa o primeiro mes com um pedaco de
+            # mes - ou com nada, se o dia 31 cair num domingo, que foi o que
+            # aconteceu com 31/12/2023. Pede-se desde o primeiro dia do mes.
+            primeiro_dia = retornos.index.min().replace(day=1)
             cdi = alinhar(
-                cdi_mensal(retornos.index.min(), cache=CACHE_CDI), retornos.index
+                cdi_mensal(primeiro_dia, cache=CACHE_CDI), retornos.index
             )
         except CDIIndisponivel as erro:
             print(f"\nSem CDI: {erro}")

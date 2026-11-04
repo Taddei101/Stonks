@@ -134,8 +134,15 @@ def historico(
         ]
         cobre_tickers = set(recorte["ticker"].unique()) >= set(tickers)
         if cobre_tickers and len(recorte):
-            cobre_inicio = recorte["data"].min() <= inicio + pd.Timedelta(days=5)
-            cobre_fim = recorte["data"].max() >= fim - pd.Timedelta(days=5)
+            # POR TICKER, não global. Usar o mínimo global foi um bug real:
+            # com ITUB4 no cache desde 2016 e WEGE3 só desde 2023, o mínimo
+            # global dava 2016, a verificação passava, e o cache devolvia
+            # WEGE3 vazio nos sete primeiros anos. Quem consumisse a série
+            # cortaria o período comum para três anos sem erro nenhum — o
+            # pior tipo de falha, porque o número sai menor e parece certo.
+            pontas = recorte.groupby("ticker")["data"].agg(["min", "max"])
+            cobre_inicio = (pontas["min"] <= inicio + pd.Timedelta(days=5)).all()
+            cobre_fim = (pontas["max"] >= fim - pd.Timedelta(days=5)).all()
             if cobre_inicio and cobre_fim:
                 return (
                     recorte.pivot(index="data", columns="ticker", values="close")

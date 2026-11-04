@@ -109,3 +109,44 @@ def test_historico_total_pede_serie_ajustada(tmp_path, baixar_falso):
 def test_sem_tickers_nao_baixa_nada(baixar_falso):
     assert mod_precos.historico([], INICIO).empty
     assert not baixar_falso
+
+
+def test_cache_com_ticker_de_historico_curto_nao_e_aceito(tmp_path, baixar_falso):
+    """O bug que truncou 7 anos de histórico em silêncio.
+
+    Com um ticker no cache desde 2016 e outro só desde 2024, o mínimo
+    GLOBAL das datas dava 2016 e a verificação passava. O cache devolvia o
+    segundo ticker vazio no começo, e quem consumisse a série cortaria o
+    período comum sem erro nenhum.
+    """
+    cache = tmp_path / "precos.parquet"
+    antigo = pd.DataFrame(
+        [
+            {"data": d, "ticker": "VELHO", "close": 100.0, "ajustado": False}
+            for d in pd.bdate_range("2016-01-01", "2026-01-01")
+        ]
+        + [
+            {"data": d, "ticker": "NOVO", "close": 50.0, "ajustado": False}
+            for d in pd.bdate_range("2024-01-01", "2026-01-01")
+        ]
+    )
+    antigo.to_parquet(cache, index=False)
+
+    mod_precos.historico(["VELHO", "NOVO"], "2016-01-01", "2026-01-01", cache=cache)
+
+    assert len(baixar_falso) == 1, "deveria ter rebaixado em vez de usar o cache"
+
+
+def test_cache_com_todos_os_tickers_cobrindo_e_aceito(tmp_path, baixar_falso):
+    cache = tmp_path / "precos.parquet"
+    pd.DataFrame(
+        [
+            {"data": d, "ticker": t, "close": 100.0, "ajustado": False}
+            for d in pd.bdate_range("2016-01-01", "2026-01-01")
+            for t in ("A", "B")
+        ]
+    ).to_parquet(cache, index=False)
+
+    mod_precos.historico(["A", "B"], "2016-01-01", "2026-01-01", cache=cache)
+
+    assert not baixar_falso

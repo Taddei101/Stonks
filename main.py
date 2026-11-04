@@ -184,7 +184,7 @@ def rodar_comparacao(
         days=round(janela_anos * 365)
     )
     precos = historico_total(universo, inicio, cache=CACHE_PRECOS_TOTAL)
-    retornos = retornos_mensais(precos)
+    retornos = retornos_mensais(precos, avisar=print)
 
     carteiras = todas(matriz_covariancia(retornos))
     if alvo is not None:
@@ -240,7 +240,7 @@ def rodar_validacao(
         days=round(janela_anos * 365)
     )
     precos = historico_total(universo, inicio, cache=CACHE_PRECOS_TOTAL)
-    retornos = retornos_mensais(precos)
+    retornos = retornos_mensais(precos, avisar=print)
 
     regras = regras_sobre_retornos()
     if alvo is not None:

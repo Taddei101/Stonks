@@ -37,7 +37,32 @@ class HistoricoInsuficiente(ValueError):
     """Não há período comum suficiente entre os ativos pedidos."""
 
 
-def periodo_comum(precos: pd.DataFrame, minimo: int = 2) -> pd.DataFrame:
+def limitantes(precos: pd.DataFrame) -> pd.DataFrame:
+    """Quem está encurtando a janela comum, e desde quando tem dados.
+
+    Devolve uma linha por ativo cujo primeiro dado é posterior ao começo da
+    série, ordenada do mais limitante para o menos.
+    """
+    if precos is None or not len(precos):
+        return pd.DataFrame(columns=["desde", "ate", "observacoes"])
+
+    linhas = {}
+    inicio_geral = precos.index.min()
+    for coluna in precos.columns:
+        presentes = precos[coluna].dropna()
+        if not len(presentes):
+            linhas[coluna] = {"desde": pd.NaT, "ate": pd.NaT, "observacoes": 0}
+        elif presentes.index.min() > inicio_geral:
+            linhas[coluna] = {
+                "desde": presentes.index.min(),
+                "ate": presentes.index.max(),
+                "observacoes": len(presentes),
+            }
+
+    return pd.DataFrame(linhas).T.sort_values("desde", ascending=False)
+
+
+def periodo_comum(precos: pd.DataFrame, minimo: int = 2, avisar=None) -> pd.DataFrame:
     """Recorta para a janela em que TODOS os ativos têm preço.
 
     Por que cortar em vez de tratar ativo a ativo: correlação e covariância
@@ -62,18 +87,34 @@ def periodo_comum(precos: pd.DataFrame, minimo: int = 2) -> pd.DataFrame:
             + por_ativo.to_string()
             + "\nO ativo com menos histórico está limitando a janela."
         )
+
+    # Truncar em silêncio é perigoso: o período some, o número de
+    # observações cai, e o relatório segue imprimindo um resultado com
+    # aparência normal. Quem chama precisa poder avisar.
+    if avisar is not None and len(recorte) < len(precos) * 0.9:
+        culpados = limitantes(precos)
+        if len(culpados):
+            quem = ", ".join(
+                f"{t} (desde {linha['desde']:%m/%Y})"
+                for t, linha in culpados.head(3).iterrows()
+            )
+            avisar(
+                f"ATENÇÃO: período comum cortado de {len(precos)} para "
+                f"{len(recorte)} dias. Limitado por: {quem}."
+            )
+
     return recorte
 
 
 def retornos_diarios(
-    precos: pd.DataFrame, metodo: str = "simples"
+    precos: pd.DataFrame, metodo: str = "simples", avisar=None
 ) -> pd.DataFrame:
     """Retorno dia a dia por ativo.
 
     `metodo` em {"simples", "log"} — ver a nota no topo do módulo sobre
     quando cada um vale.
     """
-    recorte = periodo_comum(precos)
+    recorte = periodo_comum(precos, avisar=avisar)
 
     if metodo == "simples":
         retornos = recorte.pct_change()
@@ -86,13 +127,13 @@ def retornos_diarios(
 
 
 def retornos_mensais(
-    precos: pd.DataFrame, metodo: str = "simples"
+    precos: pd.DataFrame, metodo: str = "simples", avisar=None
 ) -> pd.DataFrame:
     """Retorno mês a mês por ativo, do último preço de cada mês.
 
     Esta é a frequência padrão da análise de risco deste projeto.
     """
-    recorte = periodo_comum(precos)
+    recorte = periodo_comum(precos, avisar=avisar)
     fim_do_mes = _descartar_mes_incompleto(recorte.resample("ME").last(), recorte)
 
     if metodo == "simples":

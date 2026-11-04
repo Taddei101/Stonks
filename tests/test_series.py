@@ -270,3 +270,53 @@ def test_mes_que_fecha_em_feriado_nao_e_descartado():
     mensal = retornos_mensais(precos)
 
     assert pd.Timestamp("2024-03-31") in mensal.index
+
+
+# --------------------------------------------------------------------------
+# aviso de truncamento
+# --------------------------------------------------------------------------
+
+
+def test_avisa_quando_um_ativo_corta_o_periodo():
+    """Truncar em silêncio produz relatório com aparência normal e errado."""
+    dias = pd.bdate_range("2016-01-01", "2026-01-01")
+    precos = pd.DataFrame(
+        {"VELHO": np.linspace(10, 50, len(dias)), "NOVO": np.nan}, index=dias
+    )
+    precos.loc[precos.index >= "2024-01-01", "NOVO"] = 20.0
+
+    avisos = []
+    retornos_mensais(precos, avisar=avisos.append)
+
+    assert len(avisos) == 1
+    assert "NOVO" in avisos[0]
+    assert "01/2024" in avisos[0]
+
+
+def test_nao_avisa_quando_nao_ha_truncamento():
+    dias = pd.bdate_range("2020-01-01", "2024-01-01")
+    precos = pd.DataFrame(
+        {"A": np.linspace(10, 20, len(dias)), "B": np.linspace(5, 9, len(dias))},
+        index=dias,
+    )
+
+    avisos = []
+    retornos_mensais(precos, avisar=avisos.append)
+
+    assert avisos == []
+
+
+def test_limitantes_lista_quem_encurta_a_janela():
+    from carteira.series import limitantes
+
+    dias = pd.bdate_range("2016-01-01", "2026-01-01")
+    precos = pd.DataFrame(
+        {"VELHO": 1.0, "MEDIO": np.nan, "NOVO": np.nan}, index=dias
+    )
+    precos.loc[precos.index >= "2020-01-01", "MEDIO"] = 2.0
+    precos.loc[precos.index >= "2024-01-01", "NOVO"] = 3.0
+
+    tabela = limitantes(precos)
+
+    assert list(tabela.index) == ["NOVO", "MEDIO"]
+    assert "VELHO" not in tabela.index

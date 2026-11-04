@@ -201,3 +201,72 @@ def test_volatilidade_anualizada():
 
 def test_volatilidade_com_uma_observacao_e_nan():
     assert np.isnan(anualizar_volatilidade(pd.Series([0.01])))
+
+
+# --------------------------------------------------------------------------
+# mês em andamento
+# --------------------------------------------------------------------------
+
+
+def test_mes_corrente_incompleto_e_descartado():
+    """Três pregões de novembro não podem virar uma observação mensal.
+
+    `resample("ME")` rotula o balde do mês corrente com 30/11 mesmo tendo
+    só o começo do mês. O retorno parcial entraria com o mesmo peso de um
+    mês cheio e puxaria a volatilidade estimada para baixo.
+    """
+    dias = pd.bdate_range("2024-01-02", "2024-03-05")
+    precos = pd.DataFrame({"AAAA3": np.linspace(100.0, 130.0, len(dias))}, index=dias)
+
+    mensal = retornos_mensais(precos)
+
+    # Jan e fev fecham; março tem 3 pregões e fica de fora.
+    assert len(mensal) == 1
+    assert mensal.index[-1] == pd.Timestamp("2024-02-29")
+
+
+def test_mes_completo_e_mantido():
+    """Se a série vai até o último pregão do mês, o mês conta."""
+    dias = pd.bdate_range("2024-01-02", "2024-03-29")
+    precos = pd.DataFrame({"AAAA3": np.linspace(100.0, 130.0, len(dias))}, index=dias)
+
+    mensal = retornos_mensais(precos)
+
+    assert len(mensal) == 2
+    assert mensal.index[-1] == pd.Timestamp("2024-03-31")
+
+
+def test_mes_parcial_fica_fora_da_amostra():
+    """O retorno de poucos dias não entra na série mensal.
+
+    O problema não é a DIREÇÃO do viés — um retorno de dois dias pode
+    aumentar ou reduzir o desvio padrão medido, dependendo de onde ele cai
+    em relação aos demais. O problema é que ele vem de outra distribuição e
+    entra com o mesmo peso de um mês inteiro.
+    """
+    dias = pd.bdate_range("2024-01-02", "2024-06-04")
+    rng = np.random.default_rng(3)
+    precos = pd.DataFrame(
+        {"AAAA3": 100 * np.cumprod(1 + rng.normal(0, 0.02, len(dias)))}, index=dias
+    )
+
+    sem_correcao = precos.resample("ME").last().pct_change().dropna()
+    com_correcao = retornos_mensais(precos)
+
+    assert len(com_correcao) == len(sem_correcao) - 1
+    assert pd.Timestamp("2024-06-30") in sem_correcao.index
+    assert pd.Timestamp("2024-06-30") not in com_correcao.index
+
+
+def test_mes_que_fecha_em_feriado_nao_e_descartado():
+    """Março de 2024 terminou na sexta-feira santa, sem pregão no dia 29.
+
+    Um critério baseado no rótulo do balde diria que março está incompleto.
+    A contagem de pregões não cai nessa.
+    """
+    dias = pd.bdate_range("2024-01-02", "2024-03-28")  # sem a sexta santa
+    precos = pd.DataFrame({"AAAA3": np.linspace(100.0, 130.0, len(dias))}, index=dias)
+
+    mensal = retornos_mensais(precos)
+
+    assert pd.Timestamp("2024-03-31") in mensal.index

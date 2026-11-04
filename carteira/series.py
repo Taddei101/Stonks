@@ -93,7 +93,7 @@ def retornos_mensais(
     Esta é a frequência padrão da análise de risco deste projeto.
     """
     recorte = periodo_comum(precos)
-    fim_do_mes = recorte.resample("ME").last()
+    fim_do_mes = _descartar_mes_incompleto(recorte.resample("ME").last(), recorte)
 
     if metodo == "simples":
         retornos = fim_do_mes.pct_change()
@@ -103,6 +103,40 @@ def retornos_mensais(
         raise ValueError(f"metodo deve ser 'simples' ou 'log', veio {metodo!r}")
 
     return retornos.dropna(how="all")
+
+
+FRACAO_MINIMA_DO_MES = 0.6
+
+
+def _descartar_mes_incompleto(
+    fim_do_mes: pd.DataFrame, diario: pd.DataFrame
+) -> pd.DataFrame:
+    """Remove o último mês quando ele ainda está em andamento.
+
+    `resample("ME")` rotula todo balde com o último dia do mês, inclusive o
+    do mês corrente, que pode conter dois ou três pregões. O `pct_change`
+    seguinte trata esse pedaço como se fosse um mês inteiro: um retorno de
+    três dias entra na amostra com o mesmo peso de um de vinte e um, vindo
+    de uma distribuição completamente diferente.
+
+    O critério é a CONTAGEM de pregões do último balde contra a mediana dos
+    anteriores. Comparar o rótulo do balde com a última data de preço não
+    funciona: o rótulo é sempre o último dia do calendário, e quando o mês
+    termina em sábado ou feriado — março de 2024 fechou na sexta-feira
+    santa — um mês completo pareceria incompleto. A contagem é imune a
+    feriado, a calendário de bolsa e a semana curta.
+    """
+    if len(fim_do_mes) < 2:
+        return fim_do_mes
+
+    por_mes = diario.resample("ME").size()
+    tipico = float(por_mes.iloc[:-1].median())
+    if tipico <= 0:
+        return fim_do_mes
+
+    if por_mes.iloc[-1] < tipico * FRACAO_MINIMA_DO_MES:
+        return fim_do_mes.iloc[:-1]
+    return fim_do_mes
 
 
 def retorno_carteira(retornos: pd.DataFrame, pesos: pd.Series) -> pd.Series:

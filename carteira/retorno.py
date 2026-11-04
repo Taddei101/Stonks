@@ -46,12 +46,25 @@ def serie_valor(
     px = precos.reindex(precos.index.union(calendario)).ffill().reindex(calendario)
 
     tickers = [t for t in qtd.columns if t in px.columns]
-    faltando = sorted(set(qtd.columns) - set(px.columns))
-    if faltando:
-        # Papel sem série de preço entra como zero e distorce o total, então
-        # é melhor avisar alto do que seguir com um valor silenciosamente baixo.
+    problemas = [f"{t} (coluna ausente)" for t in sorted(set(qtd.columns) - set(px.columns))]
+
+    # Coluna presente mas vazia é o caso traiçoeiro: para papel deslistado o
+    # yfinance devolve a coluna cheia de NaN em vez de erro. Como a soma do
+    # pandas ignora NaN, o papel seria avaliado em ZERO sem reclamar. Por isso
+    # a checagem é por NaN no período em que o papel esteve em carteira, não
+    # por ausência de coluna.
+    for ticker in tickers:
+        em_carteira = qtd[ticker] != 0
+        if em_carteira.any() and px.loc[em_carteira, ticker].isna().any():
+            periodo = qtd.index[em_carteira]
+            problemas.append(
+                f"{ticker} (sem cotação entre "
+                f"{periodo.min():%d/%m/%Y} e {periodo.max():%d/%m/%Y})"
+            )
+
+    if problemas:
         raise ValueError(
-            f"Sem série de preço para {faltando}. "
+            "Sem série de preço para: " + "; ".join(problemas) + ".\n"
             "Papel convertido ou deslistado não tem série no yfinance — "
             "acrescente uma linha data,ticker,close em config/precos_manuais.csv."
         )

@@ -2,7 +2,9 @@
 
     python main.py                 # posição e desvio em relação ao alvo
     python main.py --aporte 2000   # distribui o aporte nos mais defasados
-    python main.py --grafico       # gera o PNG de retorno (TWR, MWR, proventos)
+    python main.py --grafico       # gera os PNGs (retorno e proventos do ano)
+    python main.py --grafico --ano 2025   # proventos de outro ano
+    python main.py --grafico --ano 0      # proventos: histórico completo
 """
 
 import argparse
@@ -88,17 +90,27 @@ def rodar_rebalanceamento(ledger, aporte: float) -> None:
     print(formatar(plano_aporte(posicao, precos, alvo, aporte)))
 
 
-def rodar_grafico(movimentacoes, ledger) -> None:
-    from carteira.graficos import grafico_proventos_mensais, grafico_retorno
+def rodar_grafico(movimentacoes, ledger, ano: int | None) -> None:
+    from carteira.graficos import (
+        grafico_proventos_ano,
+        grafico_proventos_mensais,
+        grafico_retorno,
+    )
 
     # Proventos não dependem de preço, então este gráfico sai mesmo que o
     # yfinance esteja fora do ar.
     linhas_proventos = movimentacoes[
         movimentacoes["movimentacao"].isin(PROVENTOS)
     ][["data", "valor_operacao"]]
-    caminho_proventos = grafico_proventos_mensais(
-        linhas_proventos, SAIDA_PROVENTOS
-    )
+
+    if ano == 0:
+        caminho_proventos = grafico_proventos_mensais(
+            linhas_proventos, SAIDA_PROVENTOS
+        )
+    else:
+        caminho_proventos = grafico_proventos_ano(
+            linhas_proventos, SAIDA_PROVENTOS, ano=ano
+        )
 
     fluxo = fluxo_caixa(movimentacoes)
     caixa_diario = serie_diaria(fluxo)
@@ -143,7 +155,7 @@ def rodar_grafico(movimentacoes, ledger) -> None:
     print(f"          {caminho_proventos}")
 
 
-def main(aporte: float, grafico: bool) -> None:
+def main(aporte: float, grafico: bool, ano: int | None = None) -> None:
     movimentacoes, ledger = carregar_tudo()
 
     print(
@@ -154,7 +166,7 @@ def main(aporte: float, grafico: bool) -> None:
     mostrar_conferencia(movimentacoes, ledger)
 
     if grafico:
-        rodar_grafico(movimentacoes, ledger)
+        rodar_grafico(movimentacoes, ledger, ano)
     else:
         rodar_rebalanceamento(ledger, aporte)
 
@@ -165,6 +177,9 @@ if __name__ == "__main__":
     parser.add_argument("--aporte", type=float, default=0.0,
                         help="Valor a aportar; sem ele mostra só o desvio atual")
     parser.add_argument("--grafico", action="store_true",
-                        help="Gera o PNG de retorno em vez do rebalanceamento")
+                        help="Gera os PNGs em vez do rebalanceamento")
+    parser.add_argument("--ano", type=int, default=None,
+                        help="Ano do gráfico de proventos (padrão: ano atual; "
+                             "use 0 para o histórico completo)")
     args = parser.parse_args()
-    main(args.aporte, args.grafico)
+    main(args.aporte, args.grafico, args.ano)

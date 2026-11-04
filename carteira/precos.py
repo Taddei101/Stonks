@@ -175,19 +175,22 @@ def carregar_precos_manuais(caminho: Path) -> pd.DataFrame:
 def combinar(automatico: pd.DataFrame, manual: pd.DataFrame) -> pd.DataFrame:
     """Junta a série do yfinance com a manual.
 
-    O manual só preenche ticker que o automático não tem — nunca sobrescreve
-    preço de mercado.
+    O manual preenche BURACO, não só coluna ausente. Isso importa porque o
+    yfinance, para papel deslistado, não omite a coluna: devolve a coluna
+    cheia de NaN. Mesclar só "coluna que não existe" descartaria o preço
+    manual justamente nos casos para os quais ele foi criado.
+
+    O manual tem uma linha por ticker, propagada para frente. Onde o
+    automático tem preço de mercado, ele vence — o manual nunca sobrescreve.
     """
     if manual is None or not len(manual):
         return automatico
     if automatico is None or not len(automatico):
         return manual
 
-    novos = [c for c in manual.columns if c not in automatico.columns]
-    if not novos:
-        return automatico
-
-    return automatico.join(manual[novos], how="outer").sort_index()
+    indice = automatico.index.union(manual.index)
+    preenchimento = manual.reindex(indice).ffill()
+    return automatico.reindex(indice).combine_first(preenchimento).sort_index()
 
 
 def desdobramentos(tickers: list[str]) -> pd.DataFrame:

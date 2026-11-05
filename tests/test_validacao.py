@@ -14,6 +14,7 @@ from carteira.validacao import (
     JanelaInsuficiente,
     deslizante,
     formatar,
+    pesos_atuais,
     resumo,
 )
 
@@ -258,3 +259,41 @@ def test_otimizar_dentro_da_amostra_nao_garante_nada_fora():
         tabela.loc["vencedor", "volatilidade_anual"]
         > tabela.loc["iguais", "volatilidade_anual"]
     )
+
+
+# --------------------------------------------------------------------------
+# pesos para hoje
+# --------------------------------------------------------------------------
+
+def test_pesos_atuais_usam_a_janela_que_termina_no_ultimo_mes(retornos):
+    vistos = []
+
+    def espia(dados):
+        vistos.append(dados)
+        return iguais(dados)
+
+    pesos_atuais(retornos, {"espia": espia}, treino=36, modo="rolante")
+    assert len(vistos[0]) == 36
+    assert vistos[0].index[-1] == retornos.index[-1]
+
+
+def test_pesos_atuais_ancorada_usa_tudo(retornos):
+    vistos = []
+    pesos_atuais(retornos, {"espia": lambda d: vistos.append(d) or iguais(d)}, modo="ancorada")
+    assert len(vistos[0]) == len(retornos)
+
+
+def test_pesos_atuais_uma_coluna_por_regra_somando_um(retornos):
+    tabela = pesos_atuais(retornos, {"iguais": iguais, "primeiro": so_o_primeiro})
+    assert list(tabela.columns) == ["iguais", "primeiro"]
+    assert tabela.sum().to_numpy() == pytest.approx([1.0, 1.0])
+    assert tabela.loc["A", "primeiro"] == pytest.approx(1.0)
+
+
+def test_pesos_atuais_regra_que_falha_fica_vazia(retornos):
+    def quebra(_dados):
+        raise RuntimeError("nao converge")
+
+    tabela = pesos_atuais(retornos, {"iguais": iguais, "quebra": quebra})
+    assert tabela["quebra"].isna().all()
+    assert tabela["iguais"].sum() == pytest.approx(1.0)

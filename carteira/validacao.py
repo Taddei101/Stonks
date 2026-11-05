@@ -129,6 +129,30 @@ def deslizante(
     }
 
 
+def pesos_atuais(
+    retornos: pd.DataFrame,
+    regras: dict,
+    treino: int = MESES_TREINO,
+    modo: str = "rolante",
+) -> pd.DataFrame:
+    """Pesos que cada regra manda usar hoje: ativo x regra.
+
+    Usa a mesma janela da validação, mas terminando no último mês disponível,
+    que a validação nunca usa para estimar (não há mês seguinte para avaliar).
+    Regra que falha fica com a coluna vazia.
+    """
+    passado = _janela(retornos, len(retornos), treino, modo)
+    colunas = {}
+    for nome, regra in regras.items():
+        try:
+            pesos = regra(passado).reindex(retornos.columns).fillna(0.0)
+            soma = float(pesos.sum())
+            colunas[nome] = pesos / soma if soma else pesos
+        except Exception:
+            colunas[nome] = pd.Series(np.nan, index=retornos.columns)
+    return pd.DataFrame(colunas)
+
+
 def resumo(resultado: dict, cdi: pd.Series | None = None) -> pd.DataFrame:
     """Painel das regras sobre o período fora da amostra."""
     from carteira.comparar import comparar

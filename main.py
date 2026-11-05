@@ -233,7 +233,12 @@ def rodar_validacao(
     from carteira.cdi import CDIIndisponivel, alinhar, cdi_mensal
     from carteira.precos import historico_total
     from carteira.series import retornos_mensais
-    from carteira.validacao import deslizante, formatar as formatar_validacao, resumo
+    from carteira.validacao import (
+        deslizante,
+        formatar as formatar_validacao,
+        pesos_atuais,
+        resumo,
+    )
 
     universo, alvo = resolver_universo(tickers)
     inicio = pd.Timestamp.today().normalize() - pd.DateOffset(
@@ -264,6 +269,13 @@ def rodar_validacao(
 
     print()
     print(formatar_validacao(resultado, resumo(resultado, cdi)))
+
+    ultimo = retornos.index.max().strftime("%m/%Y")
+    print()
+    print(f"PESOS PARA HOJE (cada regra estimada com os dados até {ultimo})")
+    atuais = pesos_atuais(retornos, regras, treino=treino, modo=modo)
+    atuais.index.name = "Ticker"
+    print(atuais.map(lambda v: "   —" if pd.isna(v) else f"{v:6.1%}").to_string())
 
 
 def rodar_grafico(movimentacoes, ledger, ano: int | None) -> None:

@@ -423,6 +423,25 @@ esperado é **empate** das duas regras contra `iguais`. Única aposta: o
 rápido. Se ele vencer com folga, a primeira suspeita é sorte do período, não
 descoberta.
 
+**Resultado (05/11/2026)**, carteira de 8 ações (PETR4, VALE3, AXIA3, B3SA3,
+DIRR3, ITUB4, MULT3, PSSA3), `--validar --janela 6`, 35 meses fora da amostra
+(12/2023 a 10/2026):
+
+| regra | retorno | Sharpe | perda máx | giro/ano | P(superar iguais) |
+|---|---|---|---|---|---|
+| `tendencia` | +19,04% | 0,31 | -21,7% | 52,6% | 68,3% |
+| `momentum_12_1` | +18,00% | 0,23 | -15,7% | 352,4% | 40,7% |
+| `iguais` | +16,44% | 0,16 | -17,6% | 0,0% | — |
+
+- Empate do `momentum_12_1`: confirmado. A `tendencia` saiu "sugestivo, não
+  conclusivo", não "empate": acerto parcial.
+- Giro maior no `momentum_12_1`: confirmado (6,7 vezes o da `tendencia`).
+- A expectativa de que a janela de 36 meses perderia para a de 12 por
+  reversão **não se confirmou**: deu o contrário, dentro do ruído.
+- Leitura: o `momentum_12_1` só comprado em 8 ações gira demais para valer o
+  custo. A `tendencia` lidera, mas não tem referência na literatura e não é
+  conclusiva; a hipótese mais simples é que o período favoreceu quem subia.
+
 ---
 
 ## Dívida técnica encontrada

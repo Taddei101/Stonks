@@ -15,6 +15,8 @@ from carteira.alocacoes import (
     inclinacao_log,
     markowitz,
     markowitz_encolhido,
+    momentum_12_1,
+    regras_sobre_retornos,
     tendencia,
 )
 from carteira.risco import matriz_covariancia
@@ -236,3 +238,52 @@ def test_tendencia_proporcional_a_inclinacao():
 
     assert pesos["FORTE"] > pesos["FRACA"]
     assert pesos.sum() == pytest.approx(1.0)
+
+
+def _mensal(colunas: dict) -> pd.DataFrame:
+    n = len(next(iter(colunas.values())))
+    idx = pd.date_range("2020-01-31", periods=n, freq="ME")
+    return pd.DataFrame(colunas, index=idx)
+
+
+def test_momentum_ignora_o_mes_mais_recente():
+    """Salto no último mês não muda nada: a janela é t-12 a t-2."""
+    base = [0.01] * 36
+    salto = base[:-1] + [0.50]
+    sem = momentum_12_1(_mensal({"A": base, "B": [0.02] * 36}))
+    com = momentum_12_1(_mensal({"A": salto, "B": [0.02] * 36}))
+    assert com.to_numpy() == pytest.approx(sem.to_numpy())
+
+
+def test_momentum_ignora_o_que_e_mais_antigo_que_12_meses():
+    """Mês t-13 fica fora; t-12 entra."""
+    recente = [0.01] * 12
+    fora = momentum_12_1(_mensal({"A": [0.01] * 23 + [0.90] + recente, "B": [0.01] * 36}))
+    dentro = momentum_12_1(_mensal({"A": [0.01] * 24 + [0.90] + recente[1:], "B": [0.01] * 36}))
+    assert fora["A"] == pytest.approx(0.5)
+    assert dentro["A"] > 0.5
+
+
+def test_momentum_olha_12_meses_e_nao_36():
+    """Caiu nos 24 primeiros meses e subiu nos últimos 12: tendencia e momentum discordam."""
+    virada = [-0.03] * 24 + [0.03] * 12
+    r = _mensal({"VIROU": virada, "CONSTANTE": [0.005] * 36})
+    assert tendencia(r)["VIROU"] == pytest.approx(0.0)
+    assert momentum_12_1(r)["VIROU"] > momentum_12_1(r)["CONSTANTE"]
+
+
+def test_momentum_zera_quem_cai_e_cai_para_iguais_se_todos_caem():
+    pesos = momentum_12_1(_mensal({"SOBE": [0.02] * 36, "CAI": [-0.02] * 36}))
+    assert pesos["CAI"] == pytest.approx(0.0) and pesos["SOBE"] == pytest.approx(1.0)
+    todos = momentum_12_1(_mensal({"A": [-0.01] * 36, "B": [-0.02] * 36}))
+    assert todos.to_numpy() == pytest.approx([0.5, 0.5])
+
+
+def test_momentum_proporcional_ao_retorno_acumulado():
+    pesos = momentum_12_1(_mensal({"A": [0.02] * 36, "B": [0.01] * 36}))
+    a, b = (1.02 ** 11 - 1), (1.01 ** 11 - 1)
+    assert pesos["A"] == pytest.approx(a / (a + b))
+
+
+def test_momentum_entra_na_validacao():
+    assert "momentum_12_1" in regras_sobre_retornos()

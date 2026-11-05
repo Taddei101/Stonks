@@ -21,7 +21,8 @@ encaixe na arquitetura atual e critério de pronto.
 - **Validação deslizante — FEITA.** `carteira/validacao.py` com janela
   rolante e ancorada, medindo giro e sem vazamento de futuro. Três regras
   novas que usam retorno (`markowitz`, `markowitz_encolhido`, `tendencia`)
-  entraram para serem testadas. Comando `main.py --validar`.
+  entraram para serem testadas; `momentum_12_1` entrou em 05/11 (ver
+  "Regras de alocação e referências"). Comando `main.py --validar`.
 - **Fase 4 — pendente.** Bandas de rebalanceamento, proventos como
   instrumento, custos e imposto. É o que responde "quando comprar ou vender".
   O custo de transição é o item que pode inverter a decisão de mudar o alvo.
@@ -382,6 +383,45 @@ proposta: corretagem mais imposto sobre o lucro realizado nas vendas.
 Apresentar esse custo como desconto inicial na alternativa. Isso costuma inverter
 o resultado de mudanças pequenas e deixar de pé apenas as grandes — que é o
 comportamento desejado.
+
+---
+
+## Regras de alocação e referências
+
+Toda regra do `--comparar` e do `--validar` vem da literatura. Onde o Stonks
+adapta, a adaptação está dita.
+
+| Regra | Referência | Adaptação no Stonks |
+|---|---|---|
+| `iguais` (1/N) | DeMiguel, Garlappi e Uppal (2009), *Review of Financial Studies* 22(5) | — |
+| `inverso_vol` | forma simples da paridade de risco; ver a linha abaixo | ignora correlações |
+| `paridade_risco` | Qian (2005); Maillard, Roncalli e Teïletche (2010), *Journal of Portfolio Management* 36(4) | covariância encolhida (Ledoit-Wolf) |
+| `minima_variancia` | Haugen e Baker (1991); Clarke, de Silva e Thorley (2006) | só comprada |
+| `markowitz` | Markowitz (1952), *Journal of Finance* 7(1) | máximo Sharpe, só comprada |
+| `markowitz_encolhido` | Jorion (1986), *Journal of Financial and Quantitative Analysis* 21(3) | médias por Bayes-Stein |
+| `tendencia` | — (formaliza a intuição "o que sobe continua subindo") | inclinação do log-preço em 36 meses |
+| `momentum_12_1` | Jegadeesh e Titman (1993), *Journal of Finance* 48(1) | só comprada, peso proporcional ao retorno |
+
+### `momentum_12_1` e a janela da `tendencia` (05/11/2026)
+
+A `tendencia` mede 36 meses, e nesse horizonte a literatura documenta
+**reversão**, não continuação: De Bondt e Thaler (1985), *Journal of Finance*
+40(3). O momentum documentado usa de 3 a 12 meses. A versão clássica, aqui
+implementada, soma o retorno de t-12 a t-2 e pula o último mês, onde há
+reversão de curto prazo. A `tendencia` ficou para comparação, não foi apagada.
+
+O artigo original compra o decil vencedor e vende o perdedor entre centenas de
+ações. Com 8 ações e só posição comprada, isto é uma adaptação, e o resultado
+não testa o artigo. A evidência de momentum fora dos EUA está em Asness,
+Moskowitz e Pedersen (2013), *Journal of Finance* 68(3); a evidência
+específica para o Brasil **não foi conferida**. Quedas bruscas da estratégia:
+Daniel e Moskowitz (2016), *Journal of Financial Economics* 122(2).
+
+**Registrado antes de rodar:** com 8 ativos e cerca de 35 meses avaliados, o
+esperado é **empate** das duas regras contra `iguais`. Única aposta: o
+`momentum_12_1` gira mais que a `tendencia`, porque a janela curta muda mais
+rápido. Se ele vencer com folga, a primeira suspeita é sorte do período, não
+descoberta.
 
 ---
 

@@ -431,16 +431,38 @@ def tendencia(retornos: pd.DataFrame) -> pd.Series:
     Quando nenhum ativo tem tendência positiva, cai para pesos iguais — a
     alternativa seria ficar sem carteira, que não é uma resposta.
     """
-    inclinacoes = inclinacao_log(retornos)
-    positivas = inclinacoes.clip(lower=0.0)
+    return _proporcional_ao_positivo(inclinacao_log(retornos), "tendencia")
 
+
+def _proporcional_ao_positivo(sinal: pd.Series, nome: str) -> pd.Series:
+    """Zera sinal negativo e divide o capital na proporção do resto.
+
+    Se nenhum sinal é positivo, cai para pesos iguais.
+    """
+    positivas = sinal.clip(lower=0.0)
     total = float(positivas.sum())
     if total <= 0:
-        return pd.Series(
-            1.0 / len(inclinacoes), index=inclinacoes.index, name="tendencia"
-        )
+        return pd.Series(1.0 / len(sinal), index=sinal.index, name=nome)
+    return (positivas / total).rename(nome)
 
-    return (positivas / total).rename("tendencia")
+
+MESES_MOMENTUM = 12
+MESES_PULADOS = 1
+
+
+def momentum_12_1(retornos: pd.DataFrame) -> pd.Series:
+    """Momentum de Jegadeesh e Titman (1993): retorno acumulado de t-12 a t-2.
+
+    Diferente de `tendencia`, que mede 36 meses: em 3 a 5 anos a literatura
+    acha reversão (De Bondt e Thaler, 1985), não continuação. O mês mais
+    recente fica de fora porque nele também há reversão de curto prazo.
+
+    Adaptação: o artigo compra o decil vencedor e vende o perdedor entre
+    centenas de ações; aqui é só comprado, com peso proporcional ao sinal.
+    """
+    janela = retornos.iloc[-MESES_MOMENTUM:-MESES_PULADOS]
+    acumulado = (1 + janela).prod() - 1
+    return _proporcional_ao_positivo(acumulado, "momentum_12_1")
 
 
 def regras_sobre_retornos() -> dict:
@@ -463,4 +485,5 @@ def regras_sobre_retornos() -> dict:
     regras["markowitz"] = markowitz
     regras["markowitz_encolhido"] = markowitz_encolhido
     regras["tendencia"] = tendencia
+    regras["momentum_12_1"] = momentum_12_1
     return regras

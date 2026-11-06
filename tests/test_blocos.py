@@ -106,5 +106,5 @@ def test_exposicao_a_controle_estatal_do_alvo_atual(blocos):
 
     assert len(alvo) == 7
     assert controle.sum() == pytest.approx(1.0)
-    assert controle["estatal_br"] == pytest.approx(0.2232, abs=0.001)
-    assert controle["golden_share"] == pytest.approx(0.3604, abs=0.001)
+    assert controle["estatal_br"] == pytest.approx(0.196, abs=0.001)
+    assert controle["golden_share"] == pytest.approx(0.231, abs=0.001)

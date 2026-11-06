@@ -1,8 +1,13 @@
 """Desvio da carteira em relação ao alvo e plano de aporte.
 
-Política: só compra. Nunca sugere venda — evita fato gerador de IR e é o
-comportamento usual de buy-and-hold. Como consequência, o desvio só converge
+Política padrão: só compra. Não sugere venda — evita fato gerador de IR e é
+o comportamento usual de buy-and-hold. Como consequência, o desvio só converge
 a zero assintoticamente conforme você aporta; ele não zera num aporte só.
+
+Com `permitir_venda=True` (ferramenta do site), quem está acima do alvo vende
+o excedente em ações inteiras, arredondando para baixo, e o dinheiro soma ao
+aporte. Ticker fora do alvo nunca é vendido: ausência no alvo é tratada como
+esquecimento; para zerar uma posição, o alvo precisa dizer 0.
 
 As funções aqui são puras: recebem posição, preços e alvo, e não vão à rede.
 """
@@ -77,15 +82,17 @@ def plano_aporte(
     precos: pd.Series,
     alvo: pd.Series,
     aporte: float = 0.0,
+    permitir_venda: bool = False,
 ) -> dict:
     """Compara a carteira com o alvo e distribui o aporte nos mais defasados.
 
     Devolve dict com:
-      tabela          DataFrame por ticker, com desvio e sugestão de compra
+      tabela          DataFrame por ticker, com desvio e sugestão de compra/venda
       total_atual     valor de mercado hoje
       total_apos      valor depois do aporte
       aporte          o aporte pedido
-      investido       quanto do aporte foi efetivamente alocado
+      vendido         quanto as vendas geraram (0 sem `permitir_venda`)
+      investido       quanto do aporte + vendas foi efetivamente alocado
       troco           o que sobrou por indivisibilidade da ação
       fora_do_alvo    tickers em carteira ausentes do alvo (provável esquecimento)
     """
@@ -107,9 +114,17 @@ def plano_aporte(
     valor_alvo = peso_alvo * total_apos
     deficit = (valor_alvo - valor).clip(lower=0)
 
+    vender = pd.Series(0, index=tickers, dtype=int)
+    if permitir_venda:
+        excesso = (valor - valor_alvo).clip(lower=0).where(peso_alvo.index.isin(alvo.index), 0.0)
+        vender = np.floor(excesso / preco).fillna(0).astype(int)
+        vender[preco <= 0] = 0
+    vendido = float((vender * preco).sum())
+    caixa = aporte + vendido
+
     soma_deficit = float(deficit.sum())
-    if aporte > 0 and soma_deficit > 0:
-        rateio = aporte * deficit / soma_deficit
+    if caixa > 0 and soma_deficit > 0:
+        rateio = caixa * deficit / soma_deficit
     else:
         rateio = pd.Series(0.0, index=tickers)
 
@@ -117,12 +132,12 @@ def plano_aporte(
     acoes[preco <= 0] = 0
 
     gasto = acoes * preco
-    troco = aporte - float(gasto.sum())
-    if troco > 0 and aporte > 0:
+    troco = caixa - float(gasto.sum())
+    if troco > 0 and caixa > 0:
         extra = _distribuir_troco(troco, deficit - gasto, preco)
         acoes = acoes + extra
         gasto = acoes * preco
-        troco = aporte - float(gasto.sum())
+        troco = caixa - float(gasto.sum())
 
     tabela = pd.DataFrame(
         {
@@ -136,6 +151,8 @@ def plano_aporte(
             "deficit": deficit,
             "comprar": acoes,
             "custo": gasto,
+            "vender": vender,
+            "receita": vender * preco,
         }
     ).sort_values("desvio_pp")
 
@@ -148,6 +165,7 @@ def plano_aporte(
         "total_atual": total_atual,
         "total_apos": total_apos,
         "aporte": aporte,
+        "vendido": vendido,
         "investido": float(gasto.sum()),
         "troco": troco,
         "fora_do_alvo": fora_do_alvo,
@@ -174,17 +192,22 @@ def formatar(plano: dict) -> str:
             "desvio": tabela["desvio_pp"].map(lambda v: f"{v:+6.2f}pp"),
         }
     )
-    if plano["aporte"]:
+    movimenta = plano["aporte"] or plano["vendido"]
+    if plano["vendido"]:
+        visao["vender"] = tabela["vender"].map(lambda v: f"{v:,.0f}" if v else "-")
+        visao["receita"] = tabela["receita"].map(lambda v: f"{v:,.2f}" if v else "-")
+    if movimenta:
         visao["comprar"] = tabela["comprar"].map(lambda v: f"{v:,.0f}" if v else "-")
         visao["custo"] = tabela["custo"].map(lambda v: f"{v:,.2f}" if v else "-")
 
     linhas.append("")
     linhas.append(visao.to_string())
 
-    if plano["aporte"]:
+    if movimenta:
         linhas.append("")
+        vendido = f"Vendido: R$ {plano['vendido']:,.2f}  |  " if plano["vendido"] else ""
         linhas.append(
-            f"Alocado: R$ {plano['investido']:,.2f}  |  "
+            f"{vendido}Alocado: R$ {plano['investido']:,.2f}  |  "
             f"Troco: R$ {plano['troco']:,.2f}"
         )
 

@@ -24,16 +24,37 @@ TOLERANCIA_SOMA = 0.005
 
 
 class AlvoInvalido(ValueError):
-    """O arquivo de alvo não soma 100% dentro da tolerância."""
+    """Alvo vazio, com peso inválido ou que não soma 100% dentro da tolerância."""
 
 
 def carregar_alvo(caminho: Path, avisar=print) -> pd.Series:
-    """Lê os pesos alvo e normaliza para somar exatamente 1.
-
-    Ticker aqui é puro, sem `.SA` — o sufixo é assunto do `precos`.
-    """
+    """Lê os pesos alvo do arquivo JSON e valida com `validar_alvo`."""
     dados = json.loads(Path(caminho).read_text(encoding="utf-8"))
-    alvo = pd.Series(dados, dtype=float).rename("peso_alvo").sort_index()
+    return validar_alvo(dados, avisar=avisar)
+
+
+def validar_alvo(pesos: dict, avisar=print) -> pd.Series:
+    """Valida pesos {ticker: fração} e normaliza para somar exatamente 1.
+
+    Serve ao arquivo do Stonks e ao que o navegador manda no site, por isso
+    não confia em tipo nenhum. Ticker aqui é puro, sem `.SA` — o sufixo é
+    assunto do `precos`.
+    """
+    if not isinstance(pesos, dict) or not pesos:
+        raise AlvoInvalido("Alvo vazio.")
+
+    limpos = {}
+    for ticker, peso in pesos.items():
+        if not isinstance(ticker, str) or not ticker.strip():
+            raise AlvoInvalido(f"Ticker inválido: {ticker!r}")
+        if isinstance(peso, bool) or not isinstance(peso, (int, float)) or not np.isfinite(peso):
+            raise AlvoInvalido(f"Peso inválido para {ticker}: {peso!r}")
+        chave = ticker.strip().upper()
+        if chave in limpos:
+            raise AlvoInvalido(f"Ticker repetido: {chave}")
+        limpos[chave] = float(peso)
+
+    alvo = pd.Series(limpos, dtype=float).rename("peso_alvo").sort_index()
 
     if (alvo < 0).any():
         negativos = alvo[alvo < 0].index.tolist()

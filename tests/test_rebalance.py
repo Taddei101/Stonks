@@ -7,7 +7,9 @@ AAAA3 está 20pp acima, CCCC3 20pp abaixo, BBBB4 no alvo.
 import pandas as pd
 import pytest
 
-from carteira.rebalance import formatar, plano_aporte
+import json
+
+from carteira.rebalance import AlvoInvalido, carregar_alvo, formatar, plano_aporte, validar_alvo
 
 PRECOS = pd.Series({"AAAA3": 10.0, "BBBB4": 10.0, "CCCC3": 10.0})
 ALVO = pd.Series({"AAAA3": 1 / 3, "BBBB4": 1 / 3, "CCCC3": 1 / 3})
@@ -90,3 +92,55 @@ def test_formatar_mostra_venda(posicao):
     texto = formatar(plano_aporte(posicao, PRECOS, ALVO, permitir_venda=True))
     assert "vender" in texto
     assert "Vendido" in texto
+
+
+# ---- validar_alvo: o que vem do navegador ---------------------------------
+
+
+def test_alvo_valido_vira_serie_ordenada():
+    alvo = validar_alvo({"PETR4": 0.5, "BBAS3": 0.5}, avisar=None)
+    assert list(alvo.index) == ["BBAS3", "PETR4"]
+    assert alvo.sum() == pytest.approx(1.0)
+
+
+def test_ticker_e_padronizado():
+    alvo = validar_alvo({" petr4 ": 1.0}, avisar=None)
+    assert list(alvo.index) == ["PETR4"]
+
+
+def test_ticker_repetido_depois_de_padronizar_falha():
+    with pytest.raises(AlvoInvalido, match="repetido"):
+        validar_alvo({"PETR4": 0.5, "petr4": 0.5}, avisar=None)
+
+
+def test_soma_9990_e_normalizada_com_aviso():
+    avisos = []
+    alvo = validar_alvo({"A": 0.4995, "B": 0.4995}, avisar=avisos.append)
+    assert alvo.sum() == pytest.approx(1.0)
+    assert len(avisos) == 1
+
+
+@pytest.mark.parametrize(
+    "pesos, trecho",
+    [
+        ({}, "vazio"),
+        ([["PETR4", 1.0]], "vazio"),
+        ({"PETR4": 0.6, "BBAS3": 0.6}, "somam"),
+        ({"PETR4": 1.2, "BBAS3": -0.2}, "negativo"),
+        ({"PETR4": "1"}, "inválido"),
+        ({"PETR4": None}, "inválido"),
+        ({"PETR4": True}, "inválido"),
+        ({"PETR4": float("nan")}, "inválido"),
+        ({"PETR4": float("inf")}, "inválido"),
+        ({"": 1.0}, "Ticker inválido"),
+    ],
+)
+def test_alvo_invalido_falha_com_mensagem(pesos, trecho):
+    with pytest.raises(AlvoInvalido, match=trecho):
+        validar_alvo(pesos, avisar=None)
+
+
+def test_carregar_alvo_continua_lendo_arquivo(tmp_path):
+    arq = tmp_path / "alvo.json"
+    arq.write_text(json.dumps({"PETR4": 0.5, "BBAS3": 0.5}), encoding="utf-8")
+    assert carregar_alvo(arq, avisar=None).to_dict() == {"BBAS3": 0.5, "PETR4": 0.5}
